@@ -37,6 +37,9 @@ def init(database_url: str | None = None) -> None:
     if _backend == "sqlite":
         @event.listens_for(_engine, "connect")
         def _load_sqlite_vec(dbapi_connection, _):
+            # SQLite는 기본적으로 외래키 제약을 비활성화함.
+            # ON DELETE CASCADE가 실제로 동작하려면 연결마다 활성화 필요.
+            dbapi_connection.execute("PRAGMA foreign_keys = ON")
             try:
                 import sqlite_vec
                 dbapi_connection.enable_load_extension(True)
@@ -59,6 +62,15 @@ def create_tables() -> None:
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks "
                 f"USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[{EMBEDDING_DIM}])"
             ))
+            # vec_chunks는 가상 테이블이라 FK CASCADE가 적용되지 않음.
+            # chunks 행 삭제 시 대응하는 vec_chunks 행을 트리거로 제거.
+            conn.execute(text("""
+                CREATE TRIGGER IF NOT EXISTS trg_delete_vec_on_chunk_delete
+                AFTER DELETE ON chunks
+                BEGIN
+                    DELETE FROM vec_chunks WHERE chunk_id = OLD.id;
+                END
+            """))
     else:
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))

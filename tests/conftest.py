@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 from pathlib import Path
 
@@ -88,3 +89,61 @@ def make_hwpx(tmp_path: Path):
     def _factory(name: str = "doc.hwpx", content_xml: bytes = _HWPX_CONTENT) -> Path:
         return _make_hwpx(tmp_path / name, content_xml)
     return _factory
+
+
+# ---------------------------------------------------------------------------
+# DocPilot instance fixtures
+# ---------------------------------------------------------------------------
+
+# LLM이 필요한 테스트는 실제 키가 없으면 자동 skip
+requires_llm = pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="ANTHROPIC_API_KEY not set",
+)
+
+
+@pytest.fixture(scope="session")
+def embed_fn():
+    """sentence-transformers 임베딩 함수. 세션 전체에서 모델을 한 번만 로드."""
+    from docpilot.search.embedding import sentence_embed_fn
+    return sentence_embed_fn()
+
+
+@pytest.fixture()
+def pilot(tmp_path: Path):
+    """
+    LLM 호출 없이 인덱싱·검색만 테스트할 때 사용.
+    테스트마다 격리된 DB를 생성하므로 side effect 없음.
+    """
+    from docpilot import DocPilot
+    return DocPilot(
+        api_key="sk-test",  # init 검증 통과용 더미 키 — map() 호출 시엔 실제 키 필요
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+    )
+
+
+@pytest.fixture()
+def pilot_with_embed(tmp_path: Path, embed_fn):
+    """
+    임베딩 포함 인덱싱·벡터 검색 테스트용.
+    embed_fn은 session-scoped라 모델 로딩 비용은 1회만 발생.
+    """
+    from docpilot import DocPilot
+    return DocPilot(
+        api_key="sk-test",
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        embed_fn=embed_fn,
+    )
+
+
+@pytest.fixture()
+def pilot_llm(tmp_path: Path):
+    """
+    실제 LLM 호출이 필요한 통합 테스트용.
+    ANTHROPIC_API_KEY 없으면 테스트가 자동 skip되지 않으므로,
+    테스트 함수에 @requires_llm 마커를 함께 붙여서 사용.
+    """
+    from docpilot import DocPilot
+    return DocPilot(
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
+    )

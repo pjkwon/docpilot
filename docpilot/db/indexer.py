@@ -199,8 +199,9 @@ def _set_embedding(db: Any, chunk_id: int, vector: list[float]) -> None:
             import sqlite_vec
         except ImportError as e:
             raise SearchError("sqlite-vec required for embeddings: pip install sqlite-vec") from e
+        db.execute(text("DELETE FROM vec_chunks WHERE chunk_id = :id"), {"id": chunk_id})
         db.execute(
-            text("INSERT OR REPLACE INTO vec_chunks(chunk_id, embedding) VALUES (:id, :vec)"),
+            text("INSERT INTO vec_chunks(chunk_id, embedding) VALUES (:id, :vec)"),
             {"id": chunk_id, "vec": sqlite_vec.serialize_float32(vector)},
         )
     else:

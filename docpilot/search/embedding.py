@@ -49,9 +49,8 @@ def _sqlite_search(query_vec: list[float], top_k: int) -> list[SearchResult]:
         FROM vec_chunks v
         JOIN chunks c ON c.id = v.chunk_id
         JOIN documents d ON d.id = c.document_id
-        WHERE v.embedding MATCH :vec
+        WHERE v.embedding MATCH :vec AND k = :top_k
         ORDER BY v.distance
-        LIMIT :top_k
     """)
 
     with client.session() as db:

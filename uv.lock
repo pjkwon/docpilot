@@ -693,6 +693,7 @@ dependencies = [
     { name = "lxml" },
     { name = "python-docx" },
     { name = "python-dotenv" },
+    { name = "sentence-transformers" },
     { name = "sqlalchemy" },
 ]
 
@@ -805,6 +806,7 @@ requires-dist = [
     { name = "python-pptx", marker = "extra == 'pptx'", specifier = ">=1.0" },
     { name = "reportlab", marker = "extra == 'all'", specifier = ">=4.0" },
     { name = "reportlab", marker = "extra == 'pdf'", specifier = ">=4.0" },
+    { name = "sentence-transformers", specifier = ">=5.5.1" },
     { name = "sentence-transformers", marker = "extra == 'all'", specifier = ">=3.0" },
     { name = "sentence-transformers", marker = "extra == 'sentence'", specifier = ">=3.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
