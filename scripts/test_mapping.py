@@ -82,14 +82,14 @@ def main() -> None:
 
     # ── 2. DB 및 임베딩 초기화 ────────────────────────────────────────────
     from docpilot.db import client, indexer
-    from docpilot.search.embedding import sentence_embed_fn
+    from docpilot.search.embedding import bge_embed_fn
 
     DB_URL = f"sqlite:///{Path('docpilot.db').resolve()}"
     client.init(DB_URL)
     client.create_tables()
 
-    print("임베딩 모델 로딩 중...")
-    embed_fn = sentence_embed_fn()
+    print("임베딩 모델 로딩 중... (BAAI/bge-m3, 최초 실행 시 다운로드)")
+    embed_fn = bge_embed_fn()
     print("완료\n")
 
     # ── 3. 인덱싱 ────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ def main() -> None:
 
     from docpilot.mapping.claude import ClaudeMapper
     mapper = ClaudeMapper(api_key=api_key)
-    rag_mapper = RagMapper(mapper, embed_fn=embed_fn, top_k=5)
+    rag_mapper = RagMapper(mapper, embed_fn=embed_fn, top_k=5, use_reranker=True)
 
     print("LLM 호출 중...\n")
     try:

@@ -277,6 +277,7 @@ class DocPilot:
         base_url: str | None = None,
         database_url: str | None = None,
         embed_fn=None,
+        use_reranker: bool = False,
     ) -> None:
         self._llm = llm or os.environ.get("DOCPILOT_LLM", "claude")
         self._api_key = api_key
@@ -285,7 +286,7 @@ class DocPilot:
 
         from docpilot.mapping.rag import RagMapper
         self._mapper = base_mapper
-        self._rag_mapper = RagMapper(base_mapper, embed_fn=embed_fn)
+        self._rag_mapper = RagMapper(base_mapper, embed_fn=embed_fn, use_reranker=use_reranker)
 
         from docpilot.db import client as db_client
         db_client.init(database_url)

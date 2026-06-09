@@ -21,7 +21,9 @@ class RagMapper:
 
     embed_fn: if provided, runs morpheme AND + vector search in parallel and merges via RRF.
               When omitted, runs morpheme AND with OR fallback.
-    top_k: number of chunks to retrieve per search.
+    top_k: number of chunks to return after retrieval (and reranking if enabled).
+    use_reranker: if True, re-scores candidates with BGE reranker (BAAI/bge-reranker-v2-m3).
+                  Retrieves top_k * 3 candidates first, then reranks down to top_k.
     """
 
     def __init__(
@@ -29,10 +31,12 @@ class RagMapper:
         mapper: BaseLLMMapper,
         embed_fn: EmbedFn | None = None,
         top_k: int = 10,
+        use_reranker: bool = False,
     ) -> None:
         self._mapper = mapper
         self._embed_fn = embed_fn
         self._top_k = top_k
+        self._use_reranker = use_reranker
 
     def map(self, sections: list[TemplateSection], instructions: str | None = None) -> MappingResult:
         content = self.retrieve_content(sections)
@@ -44,6 +48,8 @@ class RagMapper:
 
     def _retrieve(self, sections: list[TemplateSection]) -> list[SearchResult]:
         query = _build_query(sections)
+        # Fetch more candidates when reranking so the reranker has room to reorder
+        candidate_k = self._top_k * 3 if self._use_reranker else self._top_k
 
         from docpilot.exceptions import SearchError
         from docpilot.search import morpheme as mor_search
@@ -52,23 +58,28 @@ class RagMapper:
             # Hybrid: morpheme AND + vector in parallel, merged via RRF
             from docpilot.search import embedding as emb_search
             try:
-                morph_results = mor_search.search(query, top_k=self._top_k, or_fallback=False)
+                morph_results = mor_search.search(query, top_k=candidate_k, or_fallback=False)
             except SearchError:
                 morph_results = []
-            vec_results = emb_search.search(query, self._embed_fn, top_k=self._top_k)
-            merged = _rrf_merge(morph_results, vec_results, top_k=self._top_k)
-            if merged:
-                return merged
-            # Both empty → OR as last resort
-            try:
-                return mor_search.search(query, top_k=self._top_k, or_fallback=True)
-            except SearchError:
-                return []
+            vec_results = emb_search.search(query, self._embed_fn, top_k=candidate_k)
+            results = _rrf_merge(morph_results, vec_results, top_k=candidate_k)
+            if not results:
+                # Both empty → OR as last resort
+                try:
+                    results = mor_search.search(query, top_k=candidate_k, or_fallback=True)
+                except SearchError:
+                    return []
         else:
             try:
-                return mor_search.search(query, top_k=self._top_k, or_fallback=True)
+                results = mor_search.search(query, top_k=candidate_k, or_fallback=True)
             except SearchError:
                 return []
+
+        if self._use_reranker and results:
+            from docpilot.search import reranker as reranker_mod
+            results = reranker_mod.rerank(query, results, self._top_k)
+
+        return results[:self._top_k]
 
 
 def _rrf_merge(
