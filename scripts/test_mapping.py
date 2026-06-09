@@ -69,15 +69,15 @@ def main() -> None:
         return list(seen)
 
     placeholders = _extract_placeholders(template_path)
-    if not placeholders:
-        print(f"템플릿에서 {{{{플레이스홀더}}}}를 찾을 수 없습니다: {template_path}")
-        print("템플릿 파일에 {{섹션명}} 형식의 플레이스홀더가 있는지 확인하세요.")
-        sys.exit(1)
+    reference_mode = not placeholders  # 플레이스홀더 없으면 LLM으로 섹션 추론
 
     print(f"템플릿: {template_path.name}")
-    print(f"플레이스홀더 {len(placeholders)}개:")
-    for p in placeholders:
-        print(f"  · {{{{{p}}}}}")
+    if reference_mode:
+        print("플레이스홀더 없음 → 레퍼런스 모드 (LLM이 섹션 추론)")
+    else:
+        print(f"플레이스홀더 {len(placeholders)}개:")
+        for p in placeholders:
+            print(f"  · {{{{{p}}}}}")
     print()
 
     # ── 2. DB 및 임베딩 초기화 ────────────────────────────────────────────
@@ -97,28 +97,28 @@ def main() -> None:
     doc_ids = indexer.index_folder(data_folder, embed_fn=embed_fn)
     print(f"완료 — 문서 {len(doc_ids)}개 (IDs: {doc_ids})\n")
 
-    # ── 4. RAG 검색 (검색 결과 미리보기) ─────────────────────────────────
+    # ── 4. RAG 검색 미리보기 (템플릿 모드만 — 레퍼런스 모드는 섹션 추론 후 매핑) ──
     from docpilot.mapping.base import TemplateSection
     from docpilot.mapping.rag import RagMapper
 
-    sections = [TemplateSection(name=p) for p in placeholders]
+    if not reference_mode:
+        sections = [TemplateSection(name=p) for p in placeholders]
 
-    # 임시 RagMapper로 검색 결과만 확인
-    class _NoOpMapper:
-        pass
+        class _NoOpMapper:
+            pass
 
-    rag = RagMapper(_NoOpMapper(), embed_fn=embed_fn, top_k=5)  # type: ignore
-    retrieved_chunks = rag._retrieve(sections)
+        rag = RagMapper(_NoOpMapper(), embed_fn=embed_fn, top_k=5)  # type: ignore
+        retrieved_chunks = rag._retrieve(sections)
 
-    print("── 검색된 청크 ─────────────────────────────────────────")
-    if not retrieved_chunks:
-        print("  검색 결과 없음 — data/ 폴더가 비어있거나 관련 내용이 없습니다.")
-    else:
-        for i, r in enumerate(retrieved_chunks, 1):
-            print(f"  [{i}] score={r.score:.4f}  출처={Path(r.source).name}")
-            print(f"       {r.content[:150].strip()}")
-            print()
-    print()
+        print("── 검색된 청크 ─────────────────────────────────────────")
+        if not retrieved_chunks:
+            print("  검색 결과 없음 — data/ 폴더가 비어있거나 관련 내용이 없습니다.")
+        else:
+            for i, r in enumerate(retrieved_chunks, 1):
+                print(f"  [{i}] score={r.score:.4f}  출처={Path(r.source).name}")
+                print(f"       {r.content[:150].strip()}")
+                print()
+        print()
 
     # ── 5. LLM 매핑 ──────────────────────────────────────────────────────
     print("── LLM 매핑 시작 ───────────────────────────────────────")
@@ -130,6 +130,25 @@ def main() -> None:
 
     from docpilot.mapping.claude import ClaudeMapper
     mapper = ClaudeMapper(api_key=api_key)
+
+    # 레퍼런스 모드: LLM으로 섹션 추론
+    if reference_mode:
+        print("레퍼런스 문서에서 섹션 추론 중...\n")
+        from docpilot import _ingest_instructions_doc, _infer_sections_from_content
+        ref_content = _ingest_instructions_doc(template_path)
+        if not ref_content:
+            print(f"파일 내용을 읽을 수 없습니다: {template_path}")
+            sys.exit(1)
+        placeholders = _infer_sections_from_content(ref_content, mapper)
+        if not placeholders:
+            print("LLM이 섹션을 추론하지 못했습니다.")
+            sys.exit(1)
+        print(f"추론된 섹션 {len(placeholders)}개:")
+        for p in placeholders:
+            print(f"  · {p}")
+        print()
+
+    sections = [TemplateSection(name=p) for p in placeholders]
     rag_mapper = RagMapper(mapper, embed_fn=embed_fn, top_k=5, use_reranker=True)
 
     print("LLM 호출 중...\n")
@@ -147,7 +166,11 @@ def main() -> None:
     print()
     print(f"모델: {result.model}  |  토큰: {result.input_tokens:,} 입력 / {result.output_tokens:,} 출력  |  {result.elapsed_seconds:.1f}초")
 
-    # ── 6. 출력 파일 저장 (선택) ─────────────────────────────────────────
+    # ── 6. 출력 파일 저장 (템플릿 모드만) ──────────────────────────────────
+    if reference_mode:
+        print("(레퍼런스 모드: 파일 저장 없음 — 매핑 결과는 위에서 확인)")
+        return
+
     output_dir = Path("output")
     output_dir.mkdir(exist_ok=True)
     output_path = output_dir / template_path.name

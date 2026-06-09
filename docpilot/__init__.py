@@ -260,6 +260,35 @@ def _extract_placeholders(template_path: Path) -> list[str]:
     return list(seen)
 
 
+def _infer_sections_from_content(content: str, mapper) -> list[str]:
+    """Use LLM to infer fillable section names from a document's text content."""
+    import json
+    from docpilot.mapping.base import TemplateSection
+
+    mapping = mapper.map(
+        content=content[:4000],
+        sections=[
+            TemplateSection(
+                name="sections",
+                description=(
+                    "위 문서 구조를 분석해 채워야 할 섹션 이름 목록을 추출하세요. "
+                    "헤딩·제목·표 컬럼·항목명 등 구조적 요소를 기반으로 하되 "
+                    "내용이 들어가야 할 곳의 레이블을 우선하세요. "
+                    "결과는 JSON 배열 문자열로만 반환하세요: [\"섹션1\", \"섹션2\", ...]"
+                ),
+            )
+        ],
+    )
+    raw = mapping.sections.get("sections", "[]")
+    try:
+        sections = json.loads(raw)
+        if isinstance(sections, list):
+            return [str(s) for s in sections if s]
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return []
+
+
 class DocPilot:
     """
     Main entry point for docpilot.
@@ -334,10 +363,40 @@ class DocPilot:
         from docpilot.mapping.base import TemplateSection
         placeholder_names = _extract_placeholders(template_path)
         if not placeholder_names:
-            raise DocPilotError(
-                "No {{placeholders}} found in template",
-                detail=str(template_path),
+            # Reference mode: infer sections from document structure via LLM,
+            # then inject {{placeholders}} into the reference doc to create a working template.
+            ref_content = _ingest_instructions_doc(template_path)
+            if not ref_content:
+                raise DocPilotError(
+                    "No {{placeholders}} found and could not read template content",
+                    detail=str(template_path),
+                )
+            placeholder_names = _infer_sections_from_content(ref_content, self._mapper)
+            if not placeholder_names:
+                raise DocPilotError(
+                    "No {{placeholders}} found and LLM could not infer sections",
+                    detail=str(template_path),
+                )
+            import tempfile
+            from docpilot.template_generator.generator import (
+                _build_template,
+                _build_docx_template,
             )
+            ref_ext = template_path.suffix.lower()
+            tpl_suffix = ref_ext if ref_ext in (".hwpx", ".docx") else ".hwpx"
+            tmp = tempfile.NamedTemporaryFile(suffix=tpl_suffix, delete=False)
+            tmp.close()
+            tmp_tpl = Path(tmp.name)
+            atexit.register(lambda p=tmp_tpl: p.unlink(missing_ok=True))
+
+            if ref_ext == ".docx":
+                _build_docx_template(template_path, placeholder_names, tmp_tpl)
+            elif ref_ext == ".hwpx":
+                _build_template(template_path, placeholder_names, tmp_tpl)
+            else:
+                # Non-buildable format (PDF, TXT …): use built-in report as base
+                _build_template(_assemble_builtin_hwpx("report"), placeholder_names, tmp_tpl)
+            template_path = tmp_tpl
 
         style_hints: dict[str, str] = {}
         _tpl_ext = template_path.suffix.lower()
