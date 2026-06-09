@@ -8,11 +8,12 @@ from docpilot.exceptions import SearchError
 from docpilot.search.models import SearchResult
 
 
-def search(query: str, top_k: int = 10) -> list[SearchResult]:
+def search(query: str, top_k: int = 10, or_fallback: bool = False) -> list[SearchResult]:
     """
     Morpheme-based search using kiwipiepy.
 
-    SQLite: FTS5 inverted index with BM25 ranking.
+    SQLite: FTS5 AND query + BM25 ranking.
+      or_fallback=True: retries with OR when AND returns no results.
     PostgreSQL: full scan with Jaccard similarity fallback.
     """
     if not query.strip():
@@ -23,12 +24,15 @@ def search(query: str, top_k: int = 10) -> list[SearchResult]:
         raise SearchError("No morphemes extracted from query", detail=query)
 
     if client.is_sqlite():
-        return _fts_search(query_morphemes, top_k)
+        results = _fts_search(query_morphemes, top_k, use_or=False)
+        if not results and or_fallback:
+            results = _fts_search(query_morphemes, top_k, use_or=True)
+        return results
     return _jaccard_search(query_morphemes, top_k)
 
 
-def _fts_search(morphemes: set[str], top_k: int) -> list[SearchResult]:
-    fts_query = " OR ".join(morphemes)
+def _fts_search(morphemes: set[str], top_k: int, use_or: bool = False) -> list[SearchResult]:
+    fts_query = (" OR " if use_or else " ").join(morphemes)
     sql = text("""
         SELECT f.rowid AS chunk_id, c.document_id, d.source, c.content, rank AS score
         FROM fts_chunks f

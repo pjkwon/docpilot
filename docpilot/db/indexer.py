@@ -15,6 +15,7 @@ EmbedFn = Callable[[str], list[float]]
 
 _CHUNK_SIZE = 1000
 _CHUNK_OVERLAP = 200
+_MIN_CHUNK_SIZE = 200
 
 
 def index(
@@ -22,6 +23,7 @@ def index(
     embed_fn: EmbedFn | None = None,
     chunk_size: int = _CHUNK_SIZE,
     overlap: int = _CHUNK_OVERLAP,
+    min_chunk_size: int = _MIN_CHUNK_SIZE,
 ) -> int:
     """
     Index an IngestedDocument into the database.
@@ -47,7 +49,7 @@ def index(
         db.add(db_doc)
         db.flush()  # get db_doc.id before adding chunks
 
-        chunks = _split(doc.content, chunk_size, overlap)
+        chunks = _split(doc.content, chunk_size, overlap, min_chunk_size)
         for i, chunk_text in enumerate(chunks):
             chunk = Chunk(
                 document_id=db_doc.id,
@@ -69,6 +71,7 @@ def reindex(
     embed_fn: EmbedFn | None = None,
     chunk_size: int = _CHUNK_SIZE,
     overlap: int = _CHUNK_OVERLAP,
+    min_chunk_size: int = _MIN_CHUNK_SIZE,
 ) -> int:
     """Delete existing document and re-index from scratch."""
     with client.session() as db:
@@ -80,7 +83,7 @@ def reindex(
         if existing:
             db.delete(existing)
 
-    return index(doc, embed_fn=embed_fn, chunk_size=chunk_size, overlap=overlap)
+    return index(doc, embed_fn=embed_fn, chunk_size=chunk_size, overlap=overlap, min_chunk_size=min_chunk_size)
 
 
 def index_folder(
@@ -130,12 +133,14 @@ def index_folder(
     return doc_ids
 
 
-def _split(text: str, chunk_size: int, overlap: int) -> list[str]:
+def _split(text: str, chunk_size: int, overlap: int, min_chunk_size: int = 0) -> list[str]:
     """Split text at \\n\\n paragraph boundaries.
 
     Units (paragraphs) are never broken mid-way unless a single unit
     exceeds chunk_size, in which case character splitting is used as a
     fallback for that unit only.
+
+    Chunks below min_chunk_size are merged into the previous chunk.
     """
     if not text:
         return []
@@ -188,19 +193,30 @@ def _split(text: str, chunk_size: int, overlap: int) -> list[str]:
     if window:
         chunks.append("\n\n".join(window))
 
+    # Merge chunks below min_chunk_size into their predecessor
+    if min_chunk_size > 0 and len(chunks) > 1:
+        merged: list[str] = [chunks[0]]
+        for chunk in chunks[1:]:
+            if len(chunk) < min_chunk_size:
+                merged[-1] = merged[-1] + "\n\n" + chunk
+            else:
+                merged.append(chunk)
+        chunks = merged
+
     return chunks
 
 
 def _set_morphemes(db: Any, chunk_id: int, chunk_text: str) -> None:
     if not client.is_sqlite():
         return
+    from sqlalchemy import text
     from docpilot.search.morpheme import _tokenize
     morphemes = " ".join(_tokenize(chunk_text))
     if not morphemes:
         return
     db.execute(text("DELETE FROM fts_chunks WHERE rowid = :id"), {"id": chunk_id})
     db.execute(
-        text("INSERT INTO fts_chunks(rowid, morphemes) VALUES (:id, :m)"),
+        text("INSERT INTO fts_chunks(rowid, morphemes) VALUES (:id, :morphemes)"),
         {"id": chunk_id, "morphemes": morphemes},
     )
 

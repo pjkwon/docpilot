@@ -108,6 +108,30 @@ def main():
             print(f"      {r.content[:120].strip()}")
             print()
 
+    # ── 5. 형태소 검색 ───────────────────────────────────────────────────
+    print("── 형태소 검색 테스트 (FTS5 AND → OR fallback) ────────")
+    print("검색어를 입력하세요 (엔터만 누르면 종료):\n")
+
+    from docpilot.search.morpheme import search as morpheme_search
+
+    while True:
+        try:
+            query = input("검색어 > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not query:
+            break
+
+        results = morpheme_search(query, top_k=5, or_fallback=True)
+        if not results:
+            print("  결과 없음\n")
+            continue
+
+        for i, r in enumerate(results, 1):
+            print(f"  [{i}] score={r.score:.3f}  출처={Path(r.source).name}")
+            print(f"      {r.content[:120].strip()}")
+            print()
+
 
 if __name__ == "__main__":
     main()

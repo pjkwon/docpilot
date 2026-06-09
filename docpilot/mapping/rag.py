@@ -19,8 +19,8 @@ class RagMapper:
     Retrieves relevant chunks from the indexed DB for the given sections,
     then delegates to the underlying mapper with the assembled context.
 
-    embed_fn: if provided, uses vector similarity search.
-              Falls back to morpheme search when omitted.
+    embed_fn: if provided, runs morpheme AND + vector search in parallel and merges via RRF.
+              When omitted, runs morpheme AND with OR fallback.
     top_k: number of chunks to retrieve per search.
     """
 
@@ -45,18 +45,69 @@ class RagMapper:
     def _retrieve(self, sections: list[TemplateSection]) -> list[SearchResult]:
         query = _build_query(sections)
 
-        if self._embed_fn is not None:
-            from docpilot.search import embedding as emb_search
-            return emb_search.search(query, self._embed_fn, top_k=self._top_k)
-
+        from docpilot.exceptions import SearchError
         from docpilot.search import morpheme as mor_search
-        return mor_search.search(query, top_k=self._top_k)
+
+        if self._embed_fn is not None:
+            # Hybrid: morpheme AND + vector in parallel, merged via RRF
+            from docpilot.search import embedding as emb_search
+            try:
+                morph_results = mor_search.search(query, top_k=self._top_k, or_fallback=False)
+            except SearchError:
+                morph_results = []
+            vec_results = emb_search.search(query, self._embed_fn, top_k=self._top_k)
+            merged = _rrf_merge(morph_results, vec_results, top_k=self._top_k)
+            if merged:
+                return merged
+            # Both empty → OR as last resort
+            try:
+                return mor_search.search(query, top_k=self._top_k, or_fallback=True)
+            except SearchError:
+                return []
+        else:
+            try:
+                return mor_search.search(query, top_k=self._top_k, or_fallback=True)
+            except SearchError:
+                return []
+
+
+def _rrf_merge(
+    results_a: list[SearchResult],
+    results_b: list[SearchResult],
+    top_k: int,
+    k: int = 60,
+) -> list[SearchResult]:
+    """Reciprocal Rank Fusion: score = Σ 1/(k + rank). k=60 is the standard default."""
+    scores: dict[int, float] = {}
+    by_id: dict[int, SearchResult] = {}
+
+    for rank, r in enumerate(results_a, 1):
+        scores[r.chunk_id] = scores.get(r.chunk_id, 0.0) + 1.0 / (k + rank)
+        by_id[r.chunk_id] = r
+
+    for rank, r in enumerate(results_b, 1):
+        scores[r.chunk_id] = scores.get(r.chunk_id, 0.0) + 1.0 / (k + rank)
+        by_id.setdefault(r.chunk_id, r)
+
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return [
+        SearchResult(
+            chunk_id=by_id[cid].chunk_id,
+            document_id=by_id[cid].document_id,
+            source=by_id[cid].source,
+            content=by_id[cid].content,
+            score=rrf_score,
+        )
+        for cid, rrf_score in ranked[:top_k]
+    ]
 
 
 def _build_query(sections: list[TemplateSection]) -> str:
+    # Prefer section names (short, keyword-focused) over descriptions.
+    # Descriptions are verbose and inflate the morpheme count, making FTS5 AND too strict.
     parts: list[str] = []
     for s in sections:
-        parts.append(s.description if s.description else s.name)
+        parts.append(s.name if s.name else s.description)
     return " ".join(parts)
 
 
