@@ -35,6 +35,7 @@ def main():
 
     DB_URL = "sqlite:////home/nsoft-2tb/projects/docpilot/docpilot.db"
     client.init(DB_URL)
+    client.create_tables()
 
     print("모델 로딩 중...")
     embed_fn = sentence_embed_fn()
@@ -64,14 +65,23 @@ def main():
             f"WHERE c.document_id IN ({id_list}) GROUP BY c.document_id"
         )).fetchall()
 
+        fts_rows = db.execute(text(
+            f"SELECT c.document_id, COUNT(*) AS fts_count "
+            f"FROM fts_chunks f JOIN chunks c ON c.id = f.rowid "
+            f"WHERE c.document_id IN ({id_list}) GROUP BY c.document_id"
+        )).fetchall()
+
     vec_by_doc = {row.document_id: row.vec_count for row in vec_rows}
+    fts_by_doc = {row.document_id: row.fts_count for row in fts_rows}
 
     print("── 저장 결과 ──────────────────────────────────────────")
     for doc in docs:
         vec_count = vec_by_doc.get(doc.id, 0)
-        match = "✓" if doc.chunk_count == vec_count else "✗ 불일치!"
+        fts_count = fts_by_doc.get(doc.id, 0)
+        vec_mark = "✓" if doc.chunk_count == vec_count else "✗ 불일치!"
+        fts_mark = "✓" if doc.chunk_count == fts_count else "✗ 불일치!"
         print(f"  [{doc.id}] {Path(doc.source).name}")
-        print(f"       청크 수: {doc.chunk_count}  /  임베딩 저장 수: {vec_count}  {match}")
+        print(f"       청크 수: {doc.chunk_count}  /  임베딩: {vec_count} {vec_mark}  /  형태소: {fts_count} {fts_mark}")
     print()
 
     # ── 4. 유사도 검색 ───────────────────────────────────────────────────

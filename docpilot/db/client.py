@@ -71,6 +71,17 @@ def create_tables() -> None:
                     DELETE FROM vec_chunks WHERE chunk_id = OLD.id;
                 END
             """))
+            conn.execute(text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS fts_chunks "
+                "USING fts5(morphemes, tokenize='unicode61')"
+            ))
+            conn.execute(text("""
+                CREATE TRIGGER IF NOT EXISTS trg_delete_fts_on_chunk_delete
+                AFTER DELETE ON chunks
+                BEGIN
+                    DELETE FROM fts_chunks WHERE rowid = OLD.id;
+                END
+            """))
     else:
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))

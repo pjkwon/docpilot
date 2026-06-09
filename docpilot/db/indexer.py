@@ -57,6 +57,7 @@ def index(
             db.add(chunk)
             db.flush()
 
+            _set_morphemes(db, chunk.id, chunk_text)
             if embed_fn:
                 _set_embedding(db, chunk.id, embed_fn(chunk_text))
 
@@ -188,6 +189,20 @@ def _split(text: str, chunk_size: int, overlap: int) -> list[str]:
         chunks.append("\n\n".join(window))
 
     return chunks
+
+
+def _set_morphemes(db: Any, chunk_id: int, chunk_text: str) -> None:
+    if not client.is_sqlite():
+        return
+    from docpilot.search.morpheme import _tokenize
+    morphemes = " ".join(_tokenize(chunk_text))
+    if not morphemes:
+        return
+    db.execute(text("DELETE FROM fts_chunks WHERE rowid = :id"), {"id": chunk_id})
+    db.execute(
+        text("INSERT INTO fts_chunks(rowid, morphemes) VALUES (:id, :m)"),
+        {"id": chunk_id, "morphemes": morphemes},
+    )
 
 
 def _set_embedding(db: Any, chunk_id: int, vector: list[float]) -> None:
