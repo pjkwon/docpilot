@@ -398,7 +398,7 @@ pilot = DocPilot(llm="claude", embed_fn=my_embed_fn)
 
 | 방식 | URL 형식 | 비고 |
 |------|----------|------|
-| SQLite (기본) | `sqlite:///./docpilot.db` | 서버 불필요, 로컬 파일 |
+| SQLite (기본) | `sqlite:////home/yourname/docpilot.db` | 서버 불필요, **절대 경로 권장** |
 | PostgreSQL | `postgresql://user:pw@host:5432/dbname` | `pip install "docpilot[postgres]"` 필요 |
 
 ```python
