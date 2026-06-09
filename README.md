@@ -8,7 +8,7 @@
 - **구조화 인제스트** — HWPX·DOCX 스타일 기반 헤딩, PPTX 불릿 계층, PDF 폰트 크기 기반 헤딩 감지, 의미 경계 청킹으로 RAG 검색 품질 향상
 - **다양한 출력 포맷** — HWPX, DOCX, PDF
 - **LLM 교체 가능** — Claude · OpenAI · Gemini · Grok · Ollama, 동일 인터페이스
-- **벡터 + 형태소 검색** — sqlite-vec 임베딩 검색 (기본), pgvector (선택), kiwipiepy + FTS5 형태소 검색 (SQLite)
+- **하이브리드 검색 (RRF)** — 형태소 AND(FTS5·BM25) + 벡터(sqlite-vec/pgvector)를 동시 실행 후 Reciprocal Rank Fusion으로 병합. embed_fn 없으면 형태소 AND → OR 폴백
 - **임베딩 제공자 선택** — OpenAI · Voyage AI · BGE(로컬) · sentence-transformers(로컬), 동일 인터페이스
 - **스타일 인식 생성 (HWPX·DOCX)** — 플레이스홀더 위치의 폰트 크기·정렬·표 셀 너비를 자동 분석해 LLM에 전달, 서식에 어울리는 내용 생성
 - **템플릿 자동 생성 (HWPX·DOCX)** — 샘플 문서에서 공통 섹션 구조 추출 (샘플 스타일 자동 상속)
@@ -314,6 +314,30 @@ pilot.generate_template(samples=[...], output="./templates/my_report.docx", use_
 
 ## 검색 방식
 
+### RagMapper 하이브리드 검색 전략
+
+`DocPilot.generate()` 내부의 `RagMapper`는 다음 순서로 검색합니다.
+
+**embed_fn 있을 때 (권장)**
+
+```
+형태소 AND (FTS5·BM25)  ─┐
+                          ├─ Reciprocal Rank Fusion → top_k 반환
+벡터 검색 (cosine)       ─┘
+
+둘 다 결과 없으면 → 형태소 OR (최후 수단)
+```
+
+형태소 exact match로 찾은 청크와 의미적으로 유사한 청크(유의어 포함)를 함께 포착해 순위를 병합합니다.
+
+**embed_fn 없을 때**
+
+```
+형태소 AND → 결과 없으면 형태소 OR
+```
+
+### 개별 검색 API
+
 ```python
 from docpilot.search import exact, embedding, morpheme
 
@@ -322,7 +346,8 @@ results = exact.search("사업 계획")
 
 # 형태소 기반 검색 — pip install "docpilot[morpheme]"
 # SQLite: FTS5 역인덱스 + BM25 랭킹 / PostgreSQL: Jaccard 유사도
-results = morpheme.search("사업 계획")
+# or_fallback=True: AND 결과 없으면 OR로 재시도
+results = morpheme.search("사업 계획", or_fallback=True)
 
 # 벡터 유사도 검색 — embed_fn을 아래 임베딩 제공자 중 선택해서 전달
 from docpilot.search.embedding import openai_embed_fn
