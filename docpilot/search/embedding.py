@@ -6,7 +6,8 @@ from sqlalchemy import text
 
 from docpilot.db import client
 from docpilot.exceptions import SearchError
-from docpilot.search.models import SearchResult
+from docpilot.search._filter import build_sql_where
+from docpilot.search.models import SearchFilter, SearchResult
 
 EmbedFn = Callable[[str], list[float]]
 
@@ -15,6 +16,7 @@ def search(
     query: str,
     embed_fn: EmbedFn,
     top_k: int = 10,
+    filters: SearchFilter | None = None,
 ) -> list[SearchResult]:
     """
     Vector similarity search.
@@ -32,11 +34,15 @@ def search(
         raise SearchError("Failed to generate query embedding", detail=str(e)) from e
 
     if client.is_sqlite():
-        return _sqlite_search(query_vec, top_k)
-    return _pg_search(query_vec, top_k)
+        return _sqlite_search(query_vec, top_k, filters)
+    return _pg_search(query_vec, top_k, filters)
 
 
-def _sqlite_search(query_vec: list[float], top_k: int) -> list[SearchResult]:
+def _sqlite_search(
+    query_vec: list[float],
+    top_k: int,
+    filters: SearchFilter | None,
+) -> list[SearchResult]:
     try:
         import sqlite_vec
     except ImportError as e:
@@ -44,17 +50,19 @@ def _sqlite_search(query_vec: list[float], top_k: int) -> list[SearchResult]:
 
     serialized = sqlite_vec.serialize_float32(query_vec)
 
-    sql = text("""
-        SELECT v.chunk_id, c.document_id, d.source, c.content, v.distance
+    extra_where, params = build_sql_where(filters, is_sqlite=True) if filters else ("", {})
+
+    sql = text(f"""
+        SELECT v.chunk_id, c.document_id, d.source, c.content, d.metadata, v.distance
         FROM vec_chunks v
         JOIN chunks c ON c.id = v.chunk_id
         JOIN documents d ON d.id = c.document_id
-        WHERE v.embedding MATCH :vec AND k = :top_k
+        WHERE v.embedding MATCH :vec AND k = :top_k{extra_where}
         ORDER BY v.distance
     """)
 
     with client.session() as db:
-        rows = db.execute(sql, {"vec": serialized, "top_k": top_k}).fetchall()
+        rows = db.execute(sql, {"vec": serialized, "top_k": top_k, **params}).fetchall()
 
     return [
         SearchResult(
@@ -63,30 +71,39 @@ def _sqlite_search(query_vec: list[float], top_k: int) -> list[SearchResult]:
             source=row.source,
             content=row.content,
             score=1.0 / (1.0 + float(row.distance)),
+            metadata=row.metadata,
         )
         for row in rows
     ]
 
 
-def _pg_search(query_vec: list[float], top_k: int) -> list[SearchResult]:
+def _pg_search(
+    query_vec: list[float],
+    top_k: int,
+    filters: SearchFilter | None,
+) -> list[SearchResult]:
     vec_str = f"[{','.join(str(v) for v in query_vec)}]"
 
-    sql = text("""
+    extra_where, params = build_sql_where(filters, is_sqlite=False) if filters else ("", {})
+    where_clause = f"WHERE c.embedding IS NOT NULL{extra_where}"
+
+    sql = text(f"""
         SELECT
             c.id          AS chunk_id,
             c.document_id AS document_id,
             d.source      AS source,
             c.content     AS content,
+            d.metadata    AS metadata,
             1 - (c.embedding <=> :vec::vector) AS score
         FROM chunks c
         JOIN documents d ON d.id = c.document_id
-        WHERE c.embedding IS NOT NULL
+        {where_clause}
         ORDER BY c.embedding <=> :vec::vector
         LIMIT :top_k
     """)
 
     with client.session() as db:
-        rows = db.execute(sql, {"vec": vec_str, "top_k": top_k}).fetchall()
+        rows = db.execute(sql, {"vec": vec_str, "top_k": top_k, **params}).fetchall()
 
     return [
         SearchResult(
@@ -95,6 +112,7 @@ def _pg_search(query_vec: list[float], top_k: int) -> list[SearchResult]:
             source=row.source,
             content=row.content,
             score=float(row.score),
+            metadata=row.metadata,
         )
         for row in rows
     ]

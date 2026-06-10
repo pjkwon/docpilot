@@ -435,6 +435,76 @@ from docpilot.search.embedding import openai_embed_fn
 results = embedding.search("사업 계획", embed_fn=openai_embed_fn())
 ```
 
+### 검색 필터 (SearchFilter)
+
+세 검색 함수 모두 `filters` 파라미터를 받습니다. 필터 조건은 AND로 결합됩니다.
+
+```python
+from docpilot.search import SearchFilter, exact, morpheme
+
+f = SearchFilter(
+    source_pattern="reports/*.hwpx",          # 파일 경로 glob 패턴 (*, ? 지원)
+    mime_type="application/vnd.hancom.hwpx",  # MIME 타입 정확 일치
+    metadata={"dept": "기획", "year": "2026"},# 문서 메타데이터 key-value 필터
+    created_after=datetime(2026, 1, 1),       # 인덱싱 날짜 범위
+    created_before=datetime(2026, 12, 31),
+)
+
+results = exact.search("사업 계획", filters=f)
+results = morpheme.search("사업 계획", filters=f)
+results = embedding.search("사업 계획", embed_fn=..., filters=f)
+```
+
+### 결과 하이라이팅
+
+```python
+from docpilot.search import highlight, render, exact
+
+results = exact.search("사업 계획")
+
+# highlights: 매칭 텀의 (start, end) 인덱스 목록 — 오버랩 스팬은 자동 병합
+results = [highlight(r, "사업 계획") for r in results]
+
+# render()로 마커 문자열 삽입 (기본값 **)
+for r in results:
+    print(render(r))          # "이것은 **사업** **계획** 문서입니다"
+    print(render(r, "=="))    # "이것은 ==사업== ==계획== 문서입니다"
+    print(r.highlights)       # [(4, 6), (7, 9)]
+```
+
+### 문서 단위 집계 (group_by_document)
+
+청크 단위 결과를 문서 단위로 집계합니다. 같은 문서에서 여러 청크가 매칭되어도 문서 하나로 묶어 스코어를 집계합니다.
+
+```python
+from docpilot.search import group_by_document, embedding
+from docpilot.search.embedding import bge_embed_fn
+
+chunk_results = embedding.search("사업 계획", embed_fn=bge_embed_fn(), top_k=30)
+
+docs = group_by_document(
+    chunk_results,
+    top_chunks=3,     # 문서당 보여줄 최고점 청크 수 (기본 3)
+    score="max",      # "max" 또는 "sum" (기본 "max")
+)
+
+for doc in docs:
+    print(doc.source, doc.score, doc.chunk_count)
+    for chunk in doc.top_chunks:
+        print(" ", chunk.content[:80])
+```
+
+`DocumentResult` 필드:
+
+| 필드 | 설명 |
+|------|------|
+| `document_id` | 문서 ID |
+| `source` | 원본 파일 경로 |
+| `score` | 집계 스코어 (max 또는 sum) |
+| `chunk_count` | 매칭된 총 청크 수 |
+| `top_chunks` | 상위 청크 `SearchResult` 목록 |
+| `metadata` | 문서 메타데이터 |
+
 ## 임베딩 제공자
 
 docpilot은 벡터 검색(RAG)에 사용할 임베딩 제공자를 자유롭게 선택할 수 있습니다.  

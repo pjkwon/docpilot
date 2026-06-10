@@ -5,10 +5,16 @@ from sqlalchemy import text
 from docpilot.db import client
 from docpilot.db.schema import Chunk, Document
 from docpilot.exceptions import SearchError
-from docpilot.search.models import SearchResult
+from docpilot.search._filter import apply_orm_filter, build_sql_where
+from docpilot.search.models import SearchFilter, SearchResult
 
 
-def search(query: str, top_k: int = 10, or_fallback: bool = False) -> list[SearchResult]:
+def search(
+    query: str,
+    top_k: int = 10,
+    or_fallback: bool = False,
+    filters: SearchFilter | None = None,
+) -> list[SearchResult]:
     """
     Morpheme-based search using kiwipiepy.
 
@@ -24,26 +30,34 @@ def search(query: str, top_k: int = 10, or_fallback: bool = False) -> list[Searc
         raise SearchError("No morphemes extracted from query", detail=query)
 
     if client.is_sqlite():
-        results = _fts_search(query_morphemes, top_k, use_or=False)
+        results = _fts_search(query_morphemes, top_k, use_or=False, filters=filters)
         if not results and or_fallback:
-            results = _fts_search(query_morphemes, top_k, use_or=True)
+            results = _fts_search(query_morphemes, top_k, use_or=True, filters=filters)
         return results
-    return _jaccard_search(query_morphemes, top_k)
+    return _jaccard_search(query_morphemes, top_k, filters=filters)
 
 
-def _fts_search(morphemes: set[str], top_k: int, use_or: bool = False) -> list[SearchResult]:
+def _fts_search(
+    morphemes: set[str],
+    top_k: int,
+    use_or: bool = False,
+    filters: SearchFilter | None = None,
+) -> list[SearchResult]:
     fts_query = (" OR " if use_or else " ").join(morphemes)
-    sql = text("""
-        SELECT f.rowid AS chunk_id, c.document_id, d.source, c.content, rank AS score
+
+    extra_where, params = build_sql_where(filters, is_sqlite=True) if filters else ("", {})
+
+    sql = text(f"""
+        SELECT f.rowid AS chunk_id, c.document_id, d.source, c.content, d.metadata, rank AS score
         FROM fts_chunks f
         JOIN chunks c ON c.id = f.rowid
         JOIN documents d ON d.id = c.document_id
-        WHERE fts_chunks MATCH :query
+        WHERE fts_chunks MATCH :query{extra_where}
         ORDER BY rank
         LIMIT :top_k
     """)
     with client.session() as db:
-        rows = db.execute(sql, {"query": fts_query, "top_k": top_k}).fetchall()
+        rows = db.execute(sql, {"query": fts_query, "top_k": top_k, **params}).fetchall()
     return [
         SearchResult(
             chunk_id=row.chunk_id,
@@ -51,35 +65,39 @@ def _fts_search(morphemes: set[str], top_k: int, use_or: bool = False) -> list[S
             source=row.source,
             content=row.content,
             score=-float(row.score),  # FTS5 rank is negative BM25; invert so higher = better
+            metadata=row.metadata,
         )
         for row in rows
     ]
 
 
-def _jaccard_search(query_morphemes: set[str], top_k: int) -> list[SearchResult]:
+def _jaccard_search(
+    query_morphemes: set[str],
+    top_k: int,
+    filters: SearchFilter | None = None,
+) -> list[SearchResult]:
     with client.session() as db:
-        raw_rows = (
-            db.query(Chunk, Document.source)
+        q = (
+            db.query(Chunk, Document.source, Document.metadata_)
             .join(Document, Chunk.document_id == Document.id)
-            .all()
         )
-        rows = [
-            (chunk.id, chunk.document_id, chunk.content, source)
-            for chunk, source in raw_rows
-        ]
+        if filters:
+            q = apply_orm_filter(q, filters)
+        raw_rows = q.all()
 
     scored: list[SearchResult] = []
-    for chunk_id, document_id, content, source in rows:
-        chunk_morphemes = _tokenize(content)
+    for chunk, source, metadata in raw_rows:
+        chunk_morphemes = _tokenize(chunk.content)
         score = _jaccard(query_morphemes, chunk_morphemes)
         if score > 0:
             scored.append(
                 SearchResult(
-                    chunk_id=chunk_id,
-                    document_id=document_id,
+                    chunk_id=chunk.id,
+                    document_id=chunk.document_id,
                     source=source,
-                    content=content,
+                    content=chunk.content,
                     score=score,
+                    metadata=metadata,
                 )
             )
 

@@ -5,22 +5,28 @@ from sqlalchemy import text
 from docpilot.db import client
 from docpilot.db.schema import Chunk, Document
 from docpilot.exceptions import SearchError
-from docpilot.search.models import SearchResult
+from docpilot.search._filter import apply_orm_filter
+from docpilot.search.models import SearchFilter, SearchResult
 
 
-def search(query: str, top_k: int = 10) -> list[SearchResult]:
-    """Keyword search using PostgreSQL ILIKE across all indexed chunks."""
+def search(
+    query: str,
+    top_k: int = 10,
+    filters: SearchFilter | None = None,
+) -> list[SearchResult]:
+    """Keyword search using ILIKE (PostgreSQL) or LIKE (SQLite) across all indexed chunks."""
     if not query.strip():
         raise SearchError("Query must not be empty")
 
     with client.session() as db:
-        rows = (
-            db.query(Chunk, Document.source)
+        q = (
+            db.query(Chunk, Document.source, Document.metadata_)
             .join(Document, Chunk.document_id == Document.id)
             .filter(Chunk.content.ilike(f"%{query}%"))
-            .limit(top_k)
-            .all()
         )
+        if filters:
+            q = apply_orm_filter(q, filters)
+        rows = q.limit(top_k).all()
 
     return [
         SearchResult(
@@ -29,8 +35,9 @@ def search(query: str, top_k: int = 10) -> list[SearchResult]:
             source=source,
             content=chunk.content,
             score=_score(chunk.content, query),
+            metadata=metadata,
         )
-        for chunk, source in rows
+        for chunk, source, metadata in rows
     ]
 
 

@@ -1,28 +1,50 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from docpilot.exceptions import SearchError
-from docpilot.search.models import SearchResult
+from docpilot.search.models import DocumentResult, SearchFilter, SearchResult
 
 
-def _make_chunk(chunk_id=1, doc_id=1, source="file.txt", content="테스트 내용", score=0.9):
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+def _make_result(
+    chunk_id=1, doc_id=1, source="file.txt", content="테스트 내용", score=0.9, metadata=None
+) -> SearchResult:
+    return SearchResult(
+        chunk_id=chunk_id,
+        document_id=doc_id,
+        source=source,
+        content=content,
+        score=score,
+        metadata=metadata,
+    )
+
+
+def _make_chunk(chunk_id=1, doc_id=1, source="file.txt", content="테스트 내용"):
     chunk = MagicMock()
     chunk.id = chunk_id
     chunk.document_id = doc_id
     chunk.content = content
-    return chunk, source
+    return chunk, source, None  # (chunk, source, metadata)
 
+
+# ---------------------------------------------------------------------------
+# ExactSearch
+# ---------------------------------------------------------------------------
 
 class TestExactSearch:
     def test_returns_results(self):
         from tests.mocks.db_mock import mock_db_session
         from docpilot.search import exact
 
-        chunk, source = _make_chunk(content="사업 계획 핵심 내용")
-        with mock_db_session(rows=[(chunk, source)]):
+        chunk, source, meta = _make_chunk(content="사업 계획 핵심 내용")
+        with mock_db_session(rows=[(chunk, source, meta)]):
             results = exact.search("사업 계획")
 
         assert len(results) == 1
@@ -43,6 +65,10 @@ class TestExactSearch:
         assert _score("전혀 다른 내용", "사업 계획") == 0.0
 
 
+# ---------------------------------------------------------------------------
+# EmbeddingSearch
+# ---------------------------------------------------------------------------
+
 class TestEmbeddingSearch:
     def test_calls_embed_fn(self):
         from docpilot.search import embedding
@@ -54,6 +80,7 @@ class TestEmbeddingSearch:
         mock_row.source = "file.txt"
         mock_row.content = "내용"
         mock_row.score = 0.9
+        mock_row.metadata = None
 
         with (
             patch("docpilot.db.client.is_sqlite", return_value=False),
@@ -77,6 +104,10 @@ class TestEmbeddingSearch:
             embedding.search("", embed_fn=lambda x: [])
 
 
+# ---------------------------------------------------------------------------
+# MorphemeSearch
+# ---------------------------------------------------------------------------
+
 class TestMorphemeSearch:
     def test_jaccard_similarity(self):
         from docpilot.search.morpheme import _jaccard
@@ -88,3 +119,165 @@ class TestMorphemeSearch:
         from docpilot.search import morpheme
         with pytest.raises(SearchError, match="empty"):
             morpheme.search("")
+
+
+# ---------------------------------------------------------------------------
+# SearchFilter / _filter helpers
+# ---------------------------------------------------------------------------
+
+class TestSearchFilter:
+    def test_glob_to_like(self):
+        from docpilot.search._filter import _glob_to_like
+        assert _glob_to_like("*.hwpx") == "%.hwpx"
+        assert _glob_to_like("docs/?.txt") == "docs/_.txt"
+
+    def test_build_sql_where_empty(self):
+        from docpilot.search._filter import build_sql_where
+        clause, params = build_sql_where(SearchFilter(), is_sqlite=True)
+        assert clause == ""
+        assert params == {}
+
+    def test_build_sql_where_source_pattern(self):
+        from docpilot.search._filter import build_sql_where
+        f = SearchFilter(source_pattern="*.hwpx")
+        clause, params = build_sql_where(f, is_sqlite=True)
+        assert "d.source LIKE" in clause
+        assert params["f_source_pattern"] == "%.hwpx"
+
+    def test_build_sql_where_mime_type(self):
+        from docpilot.search._filter import build_sql_where
+        f = SearchFilter(mime_type="application/vnd.hancom.hwpx")
+        clause, params = build_sql_where(f, is_sqlite=True)
+        assert "d.mime_type" in clause
+        assert params["f_mime_type"] == "application/vnd.hancom.hwpx"
+
+    def test_build_sql_where_dates(self):
+        from docpilot.search._filter import build_sql_where
+        dt = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        f = SearchFilter(created_after=dt)
+        clause, params = build_sql_where(f, is_sqlite=True)
+        assert "d.created_at >=" in clause
+        assert "2026-01-01" in params["f_created_after"]
+
+    def test_build_sql_where_metadata_sqlite(self):
+        from docpilot.search._filter import build_sql_where
+        f = SearchFilter(metadata={"dept": "sales"})
+        clause, params = build_sql_where(f, is_sqlite=True)
+        assert "json_extract" in clause
+        assert params["f_meta_0"] == "sales"
+
+    def test_build_sql_where_metadata_pg(self):
+        from docpilot.search._filter import build_sql_where
+        f = SearchFilter(metadata={"dept": "sales"})
+        clause, params = build_sql_where(f, is_sqlite=False)
+        assert "->>" in clause
+        assert params["f_meta_0"] == "sales"
+
+    def test_invalid_metadata_key_raises(self):
+        from docpilot.search._filter import build_sql_where
+        f = SearchFilter(metadata={"bad key!": "value"})
+        with pytest.raises(ValueError, match="alphanumeric"):
+            build_sql_where(f, is_sqlite=True)
+
+
+# ---------------------------------------------------------------------------
+# Highlight
+# ---------------------------------------------------------------------------
+
+class TestHighlight:
+    def test_no_match_returns_none_highlights(self):
+        from docpilot.search.highlight import highlight
+        r = _make_result(content="전혀 다른 내용")
+        result = highlight(r, "사업 계획")
+        assert result.highlights is None
+
+    def test_single_term_match(self):
+        from docpilot.search.highlight import highlight
+        r = _make_result(content="사업 계획 문서입니다")
+        result = highlight(r, "사업")
+        assert result.highlights is not None
+        start, end = result.highlights[0]
+        assert result.content[start:end] == "사업"
+
+    def test_multi_term_spans_merged(self):
+        from docpilot.search.highlight import highlight
+        r = _make_result(content="사업 계획 보고서")
+        result = highlight(r, "사업 계획")
+        # "사업" and "계획" are separate tokens — two spans
+        assert result.highlights is not None
+        assert len(result.highlights) == 2
+
+    def test_overlapping_spans_merged(self):
+        from docpilot.search.highlight import _find_spans
+        spans = _find_spans("abcde", ["abc", "bcd"])
+        # "abc"→(0,3) and "bcd"→(1,4) overlap → merged to (0,4)
+        assert spans == [(0, 4)]
+
+    def test_render_wraps_highlights(self):
+        from docpilot.search.highlight import highlight, render
+        r = _make_result(content="사업 계획 보고서")
+        r = highlight(r, "사업")
+        text = render(r, marker="**")
+        assert "**사업**" in text
+
+    def test_render_no_highlights_returns_content(self):
+        from docpilot.search.highlight import render
+        r = _make_result(content="내용")
+        assert render(r) == "내용"
+
+
+# ---------------------------------------------------------------------------
+# group_by_document
+# ---------------------------------------------------------------------------
+
+class TestGroupByDocument:
+    def _results(self):
+        return [
+            _make_result(chunk_id=1, doc_id=1, source="a.txt", content="청크1", score=0.9),
+            _make_result(chunk_id=2, doc_id=1, source="a.txt", content="청크2", score=0.7),
+            _make_result(chunk_id=3, doc_id=2, source="b.txt", content="청크3", score=0.5),
+        ]
+
+    def test_groups_by_document(self):
+        from docpilot.search import group_by_document
+        docs = group_by_document(self._results())
+        assert len(docs) == 2
+
+    def test_max_score(self):
+        from docpilot.search import group_by_document
+        docs = group_by_document(self._results(), score="max")
+        doc_a = next(d for d in docs if d.source == "a.txt")
+        assert doc_a.score == pytest.approx(0.9)
+
+    def test_sum_score(self):
+        from docpilot.search import group_by_document
+        docs = group_by_document(self._results(), score="sum")
+        doc_a = next(d for d in docs if d.source == "a.txt")
+        assert doc_a.score == pytest.approx(1.6)
+
+    def test_sorted_by_score_descending(self):
+        from docpilot.search import group_by_document
+        docs = group_by_document(self._results())
+        assert docs[0].score >= docs[1].score
+
+    def test_top_chunks_limit(self):
+        from docpilot.search import group_by_document
+        docs = group_by_document(self._results(), top_chunks=1)
+        doc_a = next(d for d in docs if d.source == "a.txt")
+        assert len(doc_a.top_chunks) == 1
+        assert doc_a.chunk_count == 2  # total matched, not capped
+
+    def test_chunk_count(self):
+        from docpilot.search import group_by_document
+        docs = group_by_document(self._results())
+        doc_a = next(d for d in docs if d.source == "a.txt")
+        assert doc_a.chunk_count == 2
+
+    def test_invalid_score_raises(self):
+        from docpilot.search import group_by_document
+        with pytest.raises(ValueError, match="score"):
+            group_by_document(self._results(), score="unknown")
+
+    def test_empty_input(self):
+        from docpilot.search import group_by_document
+        assert group_by_document([]) == []
