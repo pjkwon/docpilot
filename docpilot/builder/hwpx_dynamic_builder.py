@@ -314,13 +314,12 @@ def _try_index_template(
     embed_fn: EmbedFn | None,
 ) -> None:
     try:
-        from docpilot.db import client as db_client
-        db_client._get_engine()  # raises if DB not initialized
-    except Exception:
-        return  # DB not initialized — skip silently
-
-    try:
-        from docpilot.db import template_store
+        from docpilot.db import client as db_client, template_store
+        try:
+            db_client._get_engine()
+        except Exception:
+            db_client.init()
+            db_client.create_tables()
         template_store.save(
             name=_template_name(structure, instructions),
             path=str(dest),
