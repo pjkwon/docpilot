@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import copy
+import re
 import shutil
 import tempfile
 import zipfile
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +19,8 @@ if TYPE_CHECKING:
 
 _BASE_TEMPLATE = Path(__file__).parent.parent / "templates" / "base"
 
+EmbedFn = Callable[[str], list[float]]
+
 
 class HwpxDynamicBuilder:
     """
@@ -24,17 +29,24 @@ class HwpxDynamicBuilder:
     Flow (per build call):
       1. Extract charPr/paraPr style catalog from header.xml
       2. LLM decides document structure → list of SectionItems with {{placeholders}}
-      3. Build section0.xml from the structure (XML assembled by code, not LLM)
-      4. Optionally save section0.xml to templates/ for reuse
+      3. Build section0.xml and save it (to save_template or auto path in templates_dir)
+      4. Index the saved template in template_store for future natural-language search
       5. Pack temporary HWPX, then LLM fills placeholder content, write final output
 
     Reuse:
-      Pass save_template to persist section0.xml.  On subsequent runs the saved
-      section0.xml can be used directly with HwpxBuilder (no LLM structure call).
+      Every dynamically built document automatically saves and indexes its section0.xml.
+      On subsequent runs the saved section0.xml can be used directly with HwpxBuilder.
     """
 
-    def __init__(self, model: str = "claude-sonnet-4-6") -> None:
+    def __init__(
+        self,
+        model: str = "claude-sonnet-4-6",
+        templates_dir: str | Path | None = None,
+        embed_fn: EmbedFn | None = None,
+    ) -> None:
         self.model = model
+        self.templates_dir = Path(templates_dir) if templates_dir else Path.home() / "docpilot_templates"
+        self.embed_fn = embed_fn
 
     # ------------------------------------------------------------------
     # Public API
@@ -81,9 +93,12 @@ class HwpxDynamicBuilder:
         # Step 3: build section0.xml with {{placeholders}}
         section_xml = _build_section_xml(structure.items, catalog)
 
-        # Step 4: optionally save template
-        if save_template is not None:
-            _save_section_template(Path(save_template), section_xml)
+        # Step 4: save template (explicit path or auto-generated) and index for search
+        dest = Path(save_template) if save_template is not None else _auto_template_path(
+            self.templates_dir, structure
+        )
+        _save_section_template(dest, section_xml)
+        _try_index_template(dest, structure, instructions, self.embed_fn)
 
         # Step 5: pack into temp HWPX, fill content, write output
         with tempfile.TemporaryDirectory() as tmp:
@@ -127,6 +142,7 @@ class HwpxDynamicBuilder:
 
         dest = Path(save_template)
         _save_section_template(dest, section_xml)
+        _try_index_template(dest, structure, instructions, self.embed_fn)
         return dest
 
 
@@ -249,3 +265,69 @@ def _pack_hwpx(header_xml: Path, section_xml: str, output: Path) -> None:
 def _save_section_template(dest: Path, section_xml: str) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(section_xml, encoding="utf-8")
+
+
+# ------------------------------------------------------------------
+# Template auto-save helpers
+# ------------------------------------------------------------------
+
+def _auto_template_path(templates_dir: Path, structure: SectionStructure) -> Path:
+    title_item = next((i for i in structure.items if i.type == "title" and i.key), None)
+    slug = re.sub(r"[^\w가-힣]", "_", title_item.key if title_item else "template")[:30]
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return templates_dir / f"{ts}_{slug}.xml"
+
+
+def _template_name(structure: SectionStructure, instructions: str | None) -> str:
+    if instructions:
+        return instructions.strip()[:80]
+    title_item = next((i for i in structure.items if i.type == "title" and i.key), None)
+    return title_item.key if title_item else "문서 템플릿"
+
+
+def _template_description(structure: SectionStructure, instructions: str | None) -> str:
+    heading_keys = [i.key for i in structure.items if i.type == "heading" and i.key]
+    body_count = sum(1 for i in structure.items if i.type == "body")
+    parts: list[str] = []
+    if instructions:
+        parts.append(instructions.strip())
+    if heading_keys:
+        parts.append(f"섹션: {', '.join(heading_keys[:6])}")
+    parts.append(f"본문 단락 {body_count}개")
+    return ". ".join(parts)
+
+
+def _template_tags(structure: SectionStructure, instructions: str | None) -> list[str] | None:
+    tags: list[str] = []
+    if instructions:
+        tags.extend(w for w in instructions.split() if len(w) > 1)
+    title_item = next((i for i in structure.items if i.type == "title" and i.key), None)
+    if title_item:
+        tags.append(title_item.key[:20])
+    return tags[:8] if tags else None
+
+
+def _try_index_template(
+    dest: Path,
+    structure: SectionStructure,
+    instructions: str | None,
+    embed_fn: EmbedFn | None,
+) -> None:
+    try:
+        from docpilot.db import client as db_client
+        db_client._get_engine()  # raises if DB not initialized
+    except Exception:
+        return  # DB not initialized — skip silently
+
+    try:
+        from docpilot.db import template_store
+        template_store.save(
+            name=_template_name(structure, instructions),
+            path=str(dest),
+            description=_template_description(structure, instructions),
+            tags=_template_tags(structure, instructions),
+            embed_fn=embed_fn,
+        )
+    except Exception as exc:
+        import sys
+        print(f"[docpilot] template indexing skipped: {exc}", file=sys.stderr)
