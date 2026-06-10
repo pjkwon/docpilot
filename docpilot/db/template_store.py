@@ -18,6 +18,7 @@ def save(
     name: str,
     path: str | Path,
     description: str,
+    header_xml: str | Path | None = None,
     tags: list[str] | None = None,
     metadata: dict | None = None,
     embed_fn: EmbedFn | None = None,
@@ -39,6 +40,7 @@ def save(
         record = TemplateRecord(
             name=name,
             path=path_str,
+            header_xml=str(header_xml) if header_xml is not None else None,
             description=description,
             tags=tags,
             metadata_=metadata,
@@ -57,11 +59,13 @@ def search(
     query: str,
     embed_fn: EmbedFn | None = None,
     top_k: int = 5,
+    fallback: bool = True,
 ) -> list[TemplateRecord]:
     """
     Hybrid template search (vector + morpheme RRF).
 
     Falls back to FTS-only when embed_fn is None.
+    fallback=False returns [] when no search results match (skips recency fallback).
     Returns detached TemplateRecord instances ordered by relevance.
     """
     if not query.strip():
@@ -83,6 +87,9 @@ def search(
         rows.sort(key=lambda r: id_to_rank.get(r.id, 999))
         return rows
 
+    if not fallback:
+        return []
+
     # Fallback: most recent records
     with client.session() as db:
         rows = (
@@ -94,6 +101,72 @@ def search(
         for r in rows:
             db.expunge(r)
         return rows
+
+
+def list_all(order_by: str = "created_at") -> list[TemplateRecord]:
+    """Return all saved templates, newest first by default."""
+    col = getattr(TemplateRecord, order_by, TemplateRecord.created_at)
+    with client.session() as db:
+        rows = db.query(TemplateRecord).order_by(col.desc()).all()
+        for r in rows:
+            db.expunge(r)
+        return rows
+
+
+def delete(template_id: int) -> bool:
+    """Delete a template by ID. Returns True if found and deleted."""
+    with client.session() as db:
+        record = db.query(TemplateRecord).filter(TemplateRecord.id == template_id).first()
+        if record is None:
+            return False
+        db.delete(record)
+    return True
+
+
+def delete_by_path(path: str | Path) -> bool:
+    """Delete a template by its section0.xml path. Returns True if found and deleted."""
+    with client.session() as db:
+        record = db.query(TemplateRecord).filter(TemplateRecord.path == str(path)).first()
+        if record is None:
+            return False
+        db.delete(record)
+    return True
+
+
+def update(
+    template_id: int,
+    name: str | None = None,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    embed_fn: EmbedFn | None = None,
+) -> bool:
+    """
+    Update template metadata. Only provided fields are changed.
+
+    If description is updated and embed_fn is given, the vector index is rebuilt.
+    Returns True if found and updated.
+    """
+    with client.session() as db:
+        record = db.query(TemplateRecord).filter(TemplateRecord.id == template_id).first()
+        if record is None:
+            return False
+
+        if name is not None:
+            record.name = name
+        if description is not None:
+            record.description = description
+        if tags is not None:
+            record.tags = tags
+
+        db.flush()
+
+        rebuild_index = name is not None or description is not None or tags is not None
+        if rebuild_index:
+            _set_morphemes(db, record.id, record.name, record.description, record.tags)
+        if description is not None and embed_fn is not None:
+            _set_embedding(db, record.id, embed_fn(record.description))
+
+    return True
 
 
 def generate_description(

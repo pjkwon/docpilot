@@ -98,7 +98,7 @@ class HwpxDynamicBuilder:
             self.templates_dir, structure
         )
         _save_section_template(dest, section_xml)
-        _try_index_template(dest, structure, instructions, self.embed_fn)
+        _try_index_template(dest, header_xml, structure, instructions, self.embed_fn)
 
         # Step 5: pack into temp HWPX, fill content, write output
         with tempfile.TemporaryDirectory() as tmp:
@@ -142,7 +142,7 @@ class HwpxDynamicBuilder:
 
         dest = Path(save_template)
         _save_section_template(dest, section_xml)
-        _try_index_template(dest, structure, instructions, self.embed_fn)
+        _try_index_template(dest, header_xml, structure, instructions, self.embed_fn)
         return dest
 
 
@@ -309,6 +309,7 @@ def _template_tags(structure: SectionStructure, instructions: str | None) -> lis
 
 def _try_index_template(
     dest: Path,
+    header_xml: Path,
     structure: SectionStructure,
     instructions: str | None,
     embed_fn: EmbedFn | None,
@@ -323,6 +324,7 @@ def _try_index_template(
         template_store.save(
             name=_template_name(structure, instructions),
             path=str(dest),
+            header_xml=str(header_xml),
             description=_template_description(structure, instructions),
             tags=_template_tags(structure, instructions),
             embed_fn=embed_fn,
