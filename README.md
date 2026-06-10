@@ -688,6 +688,8 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 
 | 도구 | 설명 |
 |------|------|
+| `index` | 데이터 폴더를 검색 인덱스에 등록 |
+| `search` | 인덱싱된 문서 검색 (필터·하이라이팅·문서 단위 집계 지원) |
 | `generate` | 데이터 폴더 + 템플릿 → 문서 생성 |
 | `generate_template` | 샘플 HWPX → 재사용 가능한 템플릿 생성 |
 | `estimate_cost` | 생성 전 API 토큰 비용 추정 |
@@ -695,11 +697,25 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 Claude 앱에서 자연어로 사용합니다.
 
 ```
-# 내장 템플릿 사용 — 이름만 지정
+# 폴더 인덱싱
+/Users/me/data 폴더 인덱싱해줘.
+
+# 기본 검색
+사업 계획 관련 문서 찾아줘.
+
+# 필터 검색 — HWPX 파일만, 기획팀 문서만
+reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아줘.
+(source_pattern: "reports/*.hwpx", metadata: {"dept": "기획"})
+
+# 문서 단위로 집계해서 상위 문서 보여줘
+사업 계획 관련 내용을 문서 단위로 묶어서 top 5 보여줘.
+(group_by_doc: true)
+
+# 내장 템플릿으로 문서 생성
 /Users/me/data 폴더 내용으로 report 템플릿 써서 보고서 만들어줘.
 출력은 /Users/me/Documents/result.hwpx 로 저장해줘.
 
-# 커스텀 템플릿 사용 — 절대 경로로 지정
+# 커스텀 템플릿 사용
 /Users/me/data 폴더 내용으로 /Users/me/templates/proposal.hwpx 템플릿 써서
 /Users/me/Documents/proposal_result.hwpx 로 저장해줘.
 
@@ -707,6 +723,21 @@ Claude 앱에서 자연어로 사용합니다.
 /Users/me/samples 폴더의 hwpx 파일들로 템플릿 만들어서
 /Users/me/templates/my_report.hwpx 로 저장해줘.
 ```
+
+#### search 도구 파라미터
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|----------|------|--------|------|
+| `query` | string | — | 검색 질의 |
+| `mode` | string | `"morpheme"` | `"exact"` / `"morpheme"` / `"vector"` |
+| `top_k` | int | 10 | 최대 반환 결과 수 |
+| `group_by_doc` | bool | false | true이면 문서 단위 집계 |
+| `highlight` | bool | true | 쿼리 텀 `**강조**` |
+| `source_pattern` | string | null | 파일 경로 glob (예: `"reports/*.hwpx"`) |
+| `mime_type` | string | null | MIME 타입 정확 일치 |
+| `metadata` | object | null | 문서 메타데이터 key-value 필터 |
+| `created_after` | string | null | 인덱싱 날짜 하한 (ISO 8601) |
+| `created_before` | string | null | 인덱싱 날짜 상한 (ISO 8601) |
 
 ### 환경변수
 

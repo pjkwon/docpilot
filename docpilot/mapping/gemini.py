@@ -25,6 +25,23 @@ class GeminiMapper(BaseLLMMapper):
                 detail="Pass api_key or set GEMINI_API_KEY env var",
             )
 
+    def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError as e:
+            raise MappingError("google-genai SDK required: pip install google-genai") from e
+        client = genai.Client(api_key=self._api_key)
+        try:
+            response = client.models.generate_content(
+                model=self._model,
+                contents=prompt,
+                config=types.GenerateContentConfig(max_output_tokens=max_tokens),
+            )
+        except Exception as e:
+            raise MappingError("Gemini API call failed", detail=str(e)) from e
+        return response.text or ""
+
     def map(self, content, sections: list[TemplateSection]) -> MappingResult:
         try:
             from google import genai

@@ -42,6 +42,15 @@ def merge_documents(docs: list[IngestedDocument]) -> str:
 class BaseLLMMapper(ABC):
     """Abstract interface for LLM-based content-to-template mappers."""
 
+    @property
+    def model_name(self) -> str:
+        """Human-readable model identifier, used for logging and SectionStructure."""
+        return getattr(self, "_model", type(self).__name__)
+
+    @abstractmethod
+    def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        """Send a single prompt and return raw text. Used for structure/selection LLM calls."""
+
     @abstractmethod
     def map(
         self,

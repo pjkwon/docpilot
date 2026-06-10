@@ -38,6 +38,9 @@ class RagMapper:
         self._top_k = top_k
         self._use_reranker = use_reranker
 
+    def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        return self._mapper.complete(prompt, max_tokens)
+
     def map(self, sections: list[TemplateSection], instructions: str | None = None) -> MappingResult:
         content = self.retrieve_content(sections)
         return self._mapper.map(content, sections, instructions)

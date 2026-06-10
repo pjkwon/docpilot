@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from docpilot.builder.hwpx_style_extractor import StyleCatalog
+    from docpilot.mapping.base import BaseLLMMapper
 
 # Supported paragraph types and their Korean descriptions
 PARA_TYPES = {
@@ -45,32 +45,24 @@ def generate_structure(
     content: str,
     catalog: StyleCatalog,
     instructions: str | None = None,
-    model: str = "claude-sonnet-4-6",
+    mapper: BaseLLMMapper | None = None,
 ) -> SectionStructure:
     """Ask the LLM to decide the document structure as a list of SectionItems."""
-    try:
-        import anthropic
-    except ImportError as e:
-        raise ImportError("anthropic required: pip install anthropic") from e
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+    if mapper is None:
+        from docpilot.mapping.claude import ClaudeMapper
+        mapper = ClaudeMapper()
 
     prompt = _build_prompt(content, catalog, instructions)
     t0 = time.time()
-    response = client.messages.create(
-        model=model,
-        max_tokens=2048,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    raw = mapper.complete(prompt, max_tokens=2048)
     elapsed = time.time() - t0
 
-    items = _parse(response.content[0].text)
+    items = _parse(raw)
     return SectionStructure(
         items=items,
-        model=model,
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
+        model=mapper.model_name,
+        input_tokens=0,
+        output_tokens=0,
         elapsed_seconds=elapsed,
     )
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import os
 import re
 import tempfile
 import zipfile
@@ -14,6 +13,7 @@ from docpilot.exceptions import BuilderError
 
 if TYPE_CHECKING:
     from docpilot.ingestion.models import IngestedDocument
+    from docpilot.mapping.base import BaseLLMMapper
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 _BASE_HEADER_XML = _TEMPLATES_DIR / "base" / "Contents" / "header.xml"
@@ -63,6 +63,7 @@ def build_auto(
     header_xml: str | Path | None = None,
     embed_fn: EmbedFn | None = None,
     model: str = "claude-sonnet-4-6",
+    mapper: BaseLLMMapper | None = None,
 ) -> Path:
     """
     Unified entry point for HWPX document generation.
@@ -89,6 +90,8 @@ def build_auto(
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
 
+    mapper = _resolve_mapper(mapper, model)
+
     with contextlib.ExitStack() as stack:
         # Case: explicit styles → always dynamic build (user wants new section structure)
         if header_xml is not None:
@@ -96,18 +99,17 @@ def build_auto(
             if h.suffix.lower() == ".hwpx":
                 tmp = Path(stack.enter_context(tempfile.TemporaryDirectory()))
                 actual_h = extract_header_xml(h, tmp / "header.xml")
-                # Infer section structure from reference document to guide generation
-                merged = _infer_structure_hint(h, instructions, model)
+                merged = _infer_structure_hint(h, instructions, mapper)
             else:
                 actual_h = h
                 merged = instructions
-            return HwpxDynamicBuilder(model=model, embed_fn=embed_fn).build(
+            return HwpxDynamicBuilder(embed_fn=embed_fn, mapper=mapper).build(
                 content_str, actual_h, output, merged
             )
 
         # No instructions → dynamic build with base styles
         if not instructions:
-            return HwpxDynamicBuilder(model=model, embed_fn=embed_fn).build(
+            return HwpxDynamicBuilder(embed_fn=embed_fn, mapper=mapper).build(
                 content_str, _BASE_HEADER_XML, output, instructions
             )
 
@@ -118,20 +120,20 @@ def build_auto(
         )
 
         if not candidates:
-            return HwpxDynamicBuilder(model=model, embed_fn=embed_fn).build(
+            return HwpxDynamicBuilder(embed_fn=embed_fn, mapper=mapper).build(
                 content_str, _BASE_HEADER_XML, output, instructions
             )
 
         if len(candidates) == 1:
             chosen = candidates[0]
         else:
-            chosen = _llm_select(candidates, instructions, content_str, model)
+            chosen = _llm_select(candidates, instructions, content_str, mapper)
             if chosen is None:
-                return HwpxDynamicBuilder(model=model, embed_fn=embed_fn).build(
+                return HwpxDynamicBuilder(embed_fn=embed_fn, mapper=mapper).build(
                     content_str, _BASE_HEADER_XML, output, instructions
                 )
 
-    return _build_with_template(content_str, chosen, output, instructions, model)
+    return _build_with_template(content_str, chosen, output, instructions, mapper)
 
 
 def extract_header_xml(hwpx_path: str | Path, dest: str | Path) -> Path:
@@ -204,13 +206,8 @@ def _llm_select(
     candidates: list[TemplateCandidate],
     instructions: str,
     content_str: str,
-    model: str,
+    mapper: BaseLLMMapper,
 ) -> TemplateCandidate | None:
-    try:
-        import anthropic
-    except ImportError:
-        return candidates[0]  # no LLM available → take first
-
     lines = [f"{i}. [{c.source}] {c.name}: {c.description}"
              for i, c in enumerate(candidates, 1)]
 
@@ -226,15 +223,9 @@ def _llm_select(
 
 번호만 출력하세요 (0~{len(candidates)})."""
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    ai = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
     try:
-        response = ai.messages.create(
-            model=model,
-            max_tokens=8,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        choice = int(response.content[0].text.strip())
+        raw = mapper.complete(prompt, max_tokens=8)
+        choice = int(raw.strip())
     except Exception:
         return candidates[0]
 
@@ -252,12 +243,11 @@ def _build_with_template(
     candidate: TemplateCandidate,
     output: Path,
     instructions: str | None,
-    model: str,
+    mapper: BaseLLMMapper,
 ) -> Path:
     from docpilot.mapping.base import TemplateSection
-    from docpilot.mapping.claude import ClaudeMapper
     from docpilot.builder.hwpx_builder import HwpxBuilder
-    from docpilot.builder.hwpx_dynamic_builder import _pack_hwpx
+    from docpilot.builder.hwpx_dynamic_builder import pack_hwpx
 
     section_xml_text = candidate.section_xml.read_text(encoding="utf-8")
     sections = _extract_placeholders(section_xml_text)
@@ -267,12 +257,11 @@ def _build_with_template(
             detail=str(candidate.section_xml),
         )
 
-    mapper = ClaudeMapper(model=model)
     mapping = mapper.map(content_str, sections, instructions)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_hwpx = Path(tmp) / "_template.hwpx"
-        _pack_hwpx(candidate.header_xml, section_xml_text, tmp_hwpx)
+        pack_hwpx(candidate.header_xml, section_xml_text, tmp_hwpx)
         HwpxBuilder().build(tmp_hwpx, mapping.sections, output)
 
     return output
@@ -289,7 +278,7 @@ def _extract_placeholders(section_xml: str) -> list:
     return result
 
 
-def _infer_structure_hint(hwpx_path: Path, instructions: str | None, model: str) -> str | None:
+def _infer_structure_hint(hwpx_path: Path, instructions: str | None, mapper: BaseLLMMapper) -> str | None:
     """
     Extract section structure from a reference .hwpx document via LLM and merge
     with any user-provided instructions.
@@ -300,14 +289,12 @@ def _infer_structure_hint(hwpx_path: Path, instructions: str | None, model: str)
     """
     try:
         from docpilot.ingestion import hwpx as hwpx_ing
-        from docpilot.mapping.claude import ClaudeMapper
         from docpilot import _infer_sections_from_content
 
         doc = hwpx_ing.ingest(hwpx_path)
         if not doc.content.strip():
             return instructions
 
-        mapper = ClaudeMapper(model=model)
         section_names = _infer_sections_from_content(doc.content, mapper)
         if not section_names:
             return instructions
@@ -316,3 +303,10 @@ def _infer_structure_hint(hwpx_path: Path, instructions: str | None, model: str)
         return f"{instructions}\n{hint}" if instructions else hint
     except Exception:
         return instructions
+
+
+def _resolve_mapper(mapper: BaseLLMMapper | None, model: str) -> BaseLLMMapper:
+    if mapper is not None:
+        return mapper
+    from docpilot.mapping.claude import ClaudeMapper
+    return ClaudeMapper(model=model)

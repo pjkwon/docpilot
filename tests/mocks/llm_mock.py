@@ -11,6 +11,9 @@ class MockMapper(BaseLLMMapper):
         self.latency = latency
         self.calls: list[tuple[str, list[TemplateSection]]] = []
 
+    def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        return "1"
+
     def map(self, content: str, sections: list[TemplateSection]) -> MappingResult:
         self.calls.append((content, sections))
         return MappingResult(

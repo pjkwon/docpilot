@@ -25,6 +25,22 @@ class ClaudeMapper(BaseLLMMapper):
                 detail="Pass api_key or set ANTHROPIC_API_KEY env var",
             )
 
+    def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        try:
+            import anthropic
+        except ImportError as e:
+            raise MappingError("anthropic SDK required: pip install anthropic") from e
+        client = anthropic.Anthropic(api_key=self._api_key)
+        try:
+            response = client.messages.create(
+                model=self._model,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise MappingError("Claude API call failed", detail=str(e)) from e
+        return response.content[0].text
+
     def map(self, content, sections: list[TemplateSection], instructions: str | None = None) -> MappingResult:
         try:
             import anthropic

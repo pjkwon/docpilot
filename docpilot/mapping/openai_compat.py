@@ -28,6 +28,22 @@ class OpenAICompatMapper(BaseLLMMapper):
         self._api_key = api_key
         self._max_tokens = max_tokens
 
+    def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        try:
+            from openai import OpenAI
+        except ImportError as e:
+            raise MappingError("openai SDK required: pip install openai") from e
+        client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+        try:
+            response = client.chat.completions.create(
+                model=self._model,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise MappingError(f"API call failed ({self._base_url})", detail=str(e)) from e
+        return response.choices[0].message.content or ""
+
     def map(self, content, sections: list[TemplateSection]) -> MappingResult:
         try:
             from openai import OpenAI

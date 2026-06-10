@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from docpilot.builder.hwpx_section_generator import SectionItem, SectionStructure
     from docpilot.builder.hwpx_style_extractor import StyleCatalog
     from docpilot.ingestion.models import IngestedDocument
+    from docpilot.mapping.base import BaseLLMMapper
 
 _BASE_TEMPLATE = Path(__file__).parent.parent / "templates" / "base"
 
@@ -43,10 +44,12 @@ class HwpxDynamicBuilder:
         model: str = "claude-sonnet-4-6",
         templates_dir: str | Path | None = None,
         embed_fn: EmbedFn | None = None,
+        mapper: BaseLLMMapper | None = None,
     ) -> None:
         self.model = model
         self.templates_dir = Path(templates_dir) if templates_dir else Path.home() / "docpilot_templates"
         self.embed_fn = embed_fn
+        self._mapper = mapper
 
     # ------------------------------------------------------------------
     # Public API
@@ -73,7 +76,6 @@ class HwpxDynamicBuilder:
         from docpilot.builder.hwpx_section_generator import generate_structure
         from docpilot.builder.hwpx_builder import HwpxBuilder
         from docpilot.mapping.base import TemplateSection, merge_documents
-        from docpilot.mapping.claude import ClaudeMapper
 
         header_xml = Path(header_xml)
         output = Path(output)
@@ -83,12 +85,13 @@ class HwpxDynamicBuilder:
             raise BuilderError("header.xml을 찾을 수 없습니다", detail=str(header_xml))
 
         content_str = content if isinstance(content, str) else merge_documents(content)
+        mapper = self._resolve_mapper()
 
         # Step 1: style catalog
         catalog = extract_styles(header_xml)
 
         # Step 2: LLM → document structure
-        structure = generate_structure(content_str, catalog, instructions, model=self.model)
+        structure = generate_structure(content_str, catalog, instructions, mapper=mapper)
 
         # Step 3: build section0.xml with {{placeholders}}
         section_xml = _build_section_xml(structure.items, catalog)
@@ -103,7 +106,7 @@ class HwpxDynamicBuilder:
         # Step 5: pack into temp HWPX, fill content, write output
         with tempfile.TemporaryDirectory() as tmp:
             tmp_hwpx = Path(tmp) / "_dynamic.hwpx"
-            _pack_hwpx(header_xml, section_xml, tmp_hwpx)
+            pack_hwpx(header_xml, section_xml, tmp_hwpx)
 
             sections_list = [
                 TemplateSection(name=item.key, description=item.desc)
@@ -111,7 +114,6 @@ class HwpxDynamicBuilder:
                 if item.key and item.type != "empty"
             ]
 
-            mapper = ClaudeMapper(model=self.model)
             mapping = mapper.map(content_str, sections_list, instructions)
 
             HwpxBuilder().build(tmp_hwpx, mapping.sections, output)
@@ -135,15 +137,23 @@ class HwpxDynamicBuilder:
 
         header_xml = Path(header_xml)
         content_str = content if isinstance(content, str) else merge_documents(content)
+        mapper = self._resolve_mapper()
 
         catalog = extract_styles(header_xml)
-        structure = generate_structure(content_str, catalog, instructions, model=self.model)
+        structure = generate_structure(content_str, catalog, instructions, mapper=mapper)
         section_xml = _build_section_xml(structure.items, catalog)
 
         dest = Path(save_template)
         _save_section_template(dest, section_xml)
         _try_index_template(dest, header_xml, structure, instructions, self.embed_fn)
         return dest
+
+
+    def _resolve_mapper(self) -> BaseLLMMapper:
+        if self._mapper is not None:
+            return self._mapper
+        from docpilot.mapping.claude import ClaudeMapper
+        return ClaudeMapper(model=self.model)
 
 
 # ------------------------------------------------------------------
@@ -177,6 +187,10 @@ def _build_section_xml(items: list[SectionItem], catalog: StyleCatalog) -> str:
     if first_p is None:
         raise BuilderError("secPr paragraph missing from base section0.xml")
     new_root.append(copy.deepcopy(first_p))
+
+    # Read text-area width from the base section's lineseg elements.
+    # The value reflects the actual page width minus margins defined in secPr.
+    horz_size = _read_horzsize(base_root, hp_ns)
 
     # Map item type → charPrIDRef / paraPrIDRef
     type_char = {
@@ -228,7 +242,7 @@ def _build_section_xml(items: list[SectionItem], catalog: StyleCatalog) -> str:
             "vertsize": str(height), "textheight": str(height),
             "baseline": str(int(height * 0.85)),
             "spacing": str(int(height * 0.6)),
-            "horzpos": "0", "horzsize": "42520", "flags": "393216",
+            "horzpos": "0", "horzsize": str(horz_size), "flags": "393216",
         })
 
     xml_bytes = etree.tostring(
@@ -244,7 +258,7 @@ def _build_section_xml(items: list[SectionItem], catalog: StyleCatalog) -> str:
 # HWPX packaging helpers
 # ------------------------------------------------------------------
 
-def _pack_hwpx(header_xml: Path, section_xml: str, output: Path) -> None:
+def pack_hwpx(header_xml: Path, section_xml: str, output: Path) -> None:
     """Assemble base template + header.xml + section_xml into a .hwpx zip."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp) / "hwpx"
@@ -270,6 +284,19 @@ def _save_section_template(dest: Path, section_xml: str) -> None:
 # ------------------------------------------------------------------
 # Template auto-save helpers
 # ------------------------------------------------------------------
+
+def _read_horzsize(root, hp_ns: str, default: int = 42520) -> int:
+    """Return the text-area width from the first lineseg found in *root*.
+
+    Falls back to *default* (A4 standard) when no lineseg is present.
+    """
+    hp = f"{{{hp_ns}}}"
+    for ls in root.iter(f"{hp}lineseg"):
+        val = ls.get("horzsize")
+        if val:
+            return int(val)
+    return default
+
 
 def _auto_template_path(templates_dir: Path, structure: SectionStructure) -> Path:
     title_item = next((i for i in structure.items if i.type == "title" and i.key), None)
