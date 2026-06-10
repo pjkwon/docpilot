@@ -209,8 +209,11 @@ def _split(text: str, chunk_size: int, overlap: int, min_chunk_size: int = 0) ->
 def _set_morphemes(db: Any, chunk_id: int, chunk_text: str) -> None:
     if not client.is_sqlite():
         return
+    try:
+        from docpilot.search.morpheme import _tokenize
+    except Exception:
+        return  # kiwipiepy not installed — skip FTS5, indexing continues
     from sqlalchemy import text
-    from docpilot.search.morpheme import _tokenize
     morphemes = " ".join(_tokenize(chunk_text))
     if not morphemes:
         return

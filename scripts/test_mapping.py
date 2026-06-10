@@ -84,8 +84,7 @@ def main() -> None:
     from docpilot.db import client, indexer
     from docpilot.search.embedding import bge_embed_fn
 
-    DB_URL = f"sqlite:///{Path('docpilot.db').resolve()}"
-    client.init(DB_URL)
+    client.init()  # DOCPILOT_DATABASE_URL 환경변수 또는 ~/docpilot.db
     client.create_tables()
 
     print("임베딩 모델 로딩 중... (BAAI/bge-m3, 최초 실행 시 다운로드)")

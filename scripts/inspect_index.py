@@ -30,15 +30,14 @@ def main():
     # ── 1. DB 및 임베딩 초기화 ────────────────────────────────────────────
     from docpilot.db import client, indexer
     from docpilot.db.schema import EMBEDDING_DIM
-    from docpilot.search.embedding import sentence_embed_fn
+    from docpilot.search.embedding import bge_embed_fn
     from sqlalchemy import text
 
-    DB_URL = "sqlite:////home/nsoft-2tb/projects/docpilot/docpilot.db"
-    client.init(DB_URL)
+    client.init()  # DOCPILOT_DATABASE_URL 환경변수 또는 ~/docpilot.db
     client.create_tables()
 
-    print("모델 로딩 중...")
-    embed_fn = sentence_embed_fn()
+    print("모델 로딩 중... (BAAI/bge-m3, 최초 실행 시 다운로드)")
+    embed_fn = bge_embed_fn()
     print(f"모델 로드 완료 (출력 차원: {EMBEDDING_DIM})\n")
 
     # ── 2. 인덱싱 ────────────────────────────────────────────────────────
