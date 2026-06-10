@@ -96,10 +96,13 @@ def build_auto(
             if h.suffix.lower() == ".hwpx":
                 tmp = Path(stack.enter_context(tempfile.TemporaryDirectory()))
                 actual_h = extract_header_xml(h, tmp / "header.xml")
+                # Infer section structure from reference document to guide generation
+                merged = _infer_structure_hint(h, instructions, model)
             else:
                 actual_h = h
+                merged = instructions
             return HwpxDynamicBuilder(model=model, embed_fn=embed_fn).build(
-                content_str, actual_h, output, instructions
+                content_str, actual_h, output, merged
             )
 
         # No instructions → dynamic build with base styles
@@ -284,3 +287,32 @@ def _extract_placeholders(section_xml: str) -> list:
             seen.add(key)
             result.append(TemplateSection(name=key))
     return result
+
+
+def _infer_structure_hint(hwpx_path: Path, instructions: str | None, model: str) -> str | None:
+    """
+    Extract section structure from a reference .hwpx document via LLM and merge
+    with any user-provided instructions.
+
+    Uses _infer_sections_from_content() (Reference Mode) to analyse the existing
+    document, then passes the inferred section names as a structural hint to
+    generate_structure() so the new template mirrors the reference layout.
+    """
+    try:
+        from docpilot.ingestion import hwpx as hwpx_ing
+        from docpilot.mapping.claude import ClaudeMapper
+        from docpilot import _infer_sections_from_content
+
+        doc = hwpx_ing.ingest(hwpx_path)
+        if not doc.content.strip():
+            return instructions
+
+        mapper = ClaudeMapper(model=model)
+        section_names = _infer_sections_from_content(doc.content, mapper)
+        if not section_names:
+            return instructions
+
+        hint = f"참조 양식의 섹션 구조를 따르세요: {', '.join(section_names)}"
+        return f"{instructions}\n{hint}" if instructions else hint
+    except Exception:
+        return instructions

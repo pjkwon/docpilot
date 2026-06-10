@@ -263,6 +263,7 @@ pilot.generate(
 | `report` | 일반 보고서 | 보고서 제목, 작성일, 작성자/부서, 섹션1 제목, 섹션1 내용, 섹션2 제목, 섹션2 내용, 표 삽입 위치, 결론, 결론 내용 |
 | `gonmun` | 공문 | 기관명, 수신자, 경유, 제목, 본문1·2, 직위 성명, 시행번호 등 |
 | `minutes` | 회의록 | 회의록 제목, 일시, 장소, 참석자, 안건, 논의, 결정 사항 |
+| `proposal` | 제안서/기획서 | 제안 제목, 목적, 추진배경, 추진내용, 기대효과, 예산 등 |
 
 ```python
 # 이름으로 내장 템플릿 사용
@@ -274,7 +275,87 @@ pilot.generate(
 
 # 사용 가능한 내장 템플릿 목록 확인
 print(DocPilot.list_templates())
-# {'report': '일반 보고서 — ...', 'gonmun': '공문 — ...', 'minutes': '회의록 — ...'}
+# {'report': '일반 보고서 — ...', 'gonmun': '공문 — ...', 'minutes': '회의록 — ...', 'proposal': '제안서/기획서 — ...'}
+```
+
+## 동적 문서 생성 (build_auto)
+
+`build_auto()`는 템플릿 없이 소스 데이터만으로 HWPX 문서를 생성하는 단일 진입점입니다.
+`instructions`에 원하는 문서 형식을 자연어로 지정하면 아래 순서로 자동 결정합니다.
+
+```
+1. instructions가 내장 템플릿 키워드에 매칭 → 해당 템플릿 재사용
+2. 이전에 저장된 템플릿 중 유사한 것 검색 → 재사용
+3. 복수 후보가 나오면 LLM이 최적 선택
+4. 매칭 없음 → 기본 스타일로 section0.xml 동적 생성 후 저장
+```
+
+동적 생성된 모든 문서는 자동으로 `~/docpilot_templates/`에 양식이 저장되어 이후 검색·재사용이 가능합니다.
+
+```python
+from docpilot.builder import build_auto
+from docpilot.search.embedding import bge_embed_fn
+
+embed = bge_embed_fn()  # 벡터 검색까지 원할 때 (없어도 됨)
+
+# 케이스 1: 내장 보고서 양식으로 작성 ("보고서" 키워드 → report 템플릿 자동 선택)
+build_auto("./data", "output.hwpx", instructions="업무 보고서로 작성", embed_fn=embed)
+
+# 케이스 2: 내장/저장 양식에 없는 형식 → section0.xml 동적 생성 + 자동 저장
+build_auto("./data", "output.hwpx", instructions="제안요구서 형식으로 작성", embed_fn=embed)
+
+# 케이스 3: 이전에 저장된 양식 재사용
+build_auto("./data", "output.hwpx", instructions="제주 학회 때 썼던 보고서 양식으로", embed_fn=embed)
+
+# 케이스 4: 기존 .hwpx의 스타일 + 섹션 구조를 참고해 새 양식 생성
+# → header.xml(스타일)과 문서 구조를 함께 분석해 새 section0.xml 생성
+build_auto("./data", "output.hwpx", header_xml="./reference/old_report.hwpx")
+
+# 케이스 5: 후보가 여럿일 때 LLM이 가장 적합한 것을 자동 선택
+build_auto("./data", "output.hwpx", instructions="학회 발표 결과 보고서", embed_fn=embed)
+```
+
+### 기존 .hwpx에서 스타일만 가져오기
+
+`header_xml`에 `.hwpx` 파일을 넘기면 `extract_header_xml()`로 스타일을 추출하고,
+`_infer_sections_from_content()`(Reference Mode)로 기존 문서의 섹션 구조도 분석해
+새 section0.xml 생성에 반영합니다.
+
+```python
+from docpilot.builder import build_auto, extract_header_xml
+
+# header_xml에 .hwpx를 직접 넘기면 자동 처리
+build_auto("./data", "output.hwpx", header_xml="./reference/old_report.hwpx")
+
+# header.xml만 따로 추출해 HwpxDynamicBuilder에서 쓰고 싶을 때
+extract_header_xml("./reference/old_report.hwpx", dest="./my_header.xml")
+```
+
+## 저장 템플릿 관리
+
+동적 생성된 양식은 `~/docpilot_templates/`에 자동 저장되고 DB에 인덱싱됩니다.
+`template_store` API로 직접 관리할 수 있습니다.
+
+```python
+from docpilot.db import template_store
+
+# 목록 조회
+for t in template_store.list_all():
+    print(t.id, t.name, t.created_at.strftime("%Y-%m-%d"))
+
+# 자연어로 검색
+results = template_store.search("제주 학회 발표 보고서 양식", embed_fn=embed)
+
+# 삭제
+template_store.delete(3)                                          # ID로
+template_store.delete_by_path("~/docpilot_templates/20260610_보고서_제목.xml")
+
+# 이름·설명·태그 수정 (설명 변경 시 embed_fn 넘기면 벡터 재인덱싱)
+template_store.update(3, name="제주 학회 발표 보고서", embed_fn=embed)
+
+# LLM으로 더 풍부한 설명 생성 후 업데이트 (검색 품질 향상)
+desc = template_store.generate_description("~/docpilot_templates/20260610_보고서_제목.xml")
+template_store.update(3, description=desc, embed_fn=embed)
 ```
 
 ## 템플릿 자동 생성
@@ -496,7 +577,7 @@ API 키 누락이나 호출 실패가 발생한 LLM은 오류 상태로 표시�
 Claude 앱에서 docpilot 도구를 직접 사용하려면 MCP 서버를 설치하고 연결합니다.
 
 ### 설치
-예시는 PyPI 기준. GitHub 설치 시 `@ git+https://github.com/wynterkwon/docpilot.git` 추가
+예시는 PyPI 기준. GitHub 레포 참조해 설치 시 `@ git+https://github.com/pjkwon/docpilot.git` 추가
 
 ```bash
 pip install "docpilot[mcp]"
