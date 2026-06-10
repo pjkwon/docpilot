@@ -66,3 +66,27 @@ class Chunk(Base):
     # Embeddings are stored separately:
     # - SQLite: vec_chunks virtual table (sqlite-vec)
     # - PostgreSQL: embedding vector(1536) column (pgvector, added via DDL)
+
+
+class TemplateRecord(Base):
+    """
+    Saved section0.xml templates with LLM-generated descriptions for natural language search.
+
+    Stored path points to a section0.xml file that can be passed directly to HwpxBuilder.
+    The description field is embedded (vec_templates) for vector similarity search.
+    Tags are also indexed in FTS5 (fts_templates) for morpheme-based search.
+    """
+
+    __tablename__ = "template_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
