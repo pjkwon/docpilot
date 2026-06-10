@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-EMBEDDING_DIM = 384
+EMBEDDING_DIM = 1024
 
 
 class Base(DeclarativeBase):

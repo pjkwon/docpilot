@@ -395,7 +395,7 @@ embed_fn = bge_embed_fn()                                       # CPU, BAAI/bge-
 embed_fn = bge_embed_fn(device="cuda", use_fp16=True)          # GPU 가속
 
 # sentence-transformers — pip install "docpilot[sentence]" / 경량 다국어
-embed_fn = sentence_embed_fn()                                  # 384차원, ~90MB
+embed_fn = sentence_embed_fn()                                  # 384차원, ~90MB (기본값은 bge_embed_fn 권장)
 embed_fn = sentence_embed_fn(model="multilingual-e5-large", device="cuda")
 
 pilot = DocPilot(llm="claude", embed_fn=embed_fn)
@@ -403,7 +403,7 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 > **모델 캐시**: 로컬 모델은 첫 실행 시 HuggingFace에서 자동 다운로드되어 `~/.cache/huggingface/`에 저장됩니다. 이후 실행부터는 캐시에서 불러옵니다.
 
-> **임베딩 차원**: `sentence_embed_fn()` 기본 모델은 **384차원** 벡터를 출력합니다. 임베딩 제공자를 변경하거나 처음 설정하는 경우, `EMBEDDING_DIM`과 vec_chunks 테이블 차원이 일치해야 합니다. 기존 DB가 있다면 `vec_chunks`를 DROP 후 `client.create_tables()`로 재생성하세요.
+> **임베딩 차원**: 기본 임베딩 모델은 `bge_embed_fn()` (BAAI/bge-m3, **1024차원**)입니다. 임베딩 제공자를 변경하거나 처음 설정하는 경우, `EMBEDDING_DIM`과 vec_chunks 테이블 차원이 일치해야 합니다. 기존 DB가 있다면 삭제 후 재생성하거나 `vec_chunks`를 DROP 후 `client.create_tables()`로 재생성하세요.
 
 ### 커스텀 임베딩
 
