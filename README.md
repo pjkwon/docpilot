@@ -136,6 +136,11 @@ pilot = DocPilot(llm="grok",   model="grok-3-mini")
 pilot = DocPilot(llm="ollama", model="deepseek-r1:7b")
 ```
 
+> **`DocPilot(llm=...)`은 `generate()` 파이프라인 전용입니다.**  
+> `build_auto()` · `HwpxDynamicBuilder`는 내부에서 LLM을 독립적으로 호출합니다.  
+> 기본값은 Claude이며, `mapper=` 파라미터로 다른 제공자로 전환할 수 있습니다.  
+> 자세한 내용은 [동적 문서 생성 (build_auto)](#동적-문서-생성-build_auto) 참조.
+
 ## 빠른 시작
 
 ```python
@@ -313,6 +318,40 @@ build_auto("./data", "output.hwpx", header_xml="./reference/old_report.hwpx")
 
 # 케이스 5: 후보가 여럿일 때 LLM이 가장 적합한 것을 자동 선택
 build_auto("./data", "output.hwpx", instructions="학회 발표 결과 보고서", embed_fn=embed)
+```
+
+### LLM 제공자 선택 (mapper=)
+
+`build_auto()`와 `HwpxDynamicBuilder`는 기본적으로 Claude를 사용합니다.
+`mapper=`에 원하는 mapper 인스턴스를 전달하면 어떤 LLM이든 사용할 수 있습니다.
+
+```python
+from docpilot.builder import build_auto
+from docpilot.mapping.gemini import GeminiMapper
+from docpilot.mapping.openai_compat import OllamaMapper
+
+# Gemini로 동적 생성
+build_auto(
+    "./data", "output.hwpx",
+    instructions="업무 보고서",
+    mapper=GeminiMapper(api_key="AIza..."),
+)
+
+# Ollama (로컬) 사용 — API 키 불필요
+build_auto(
+    "./data", "output.hwpx",
+    instructions="회의록 형식으로",
+    mapper=OllamaMapper(model="llama3.2"),
+)
+
+# HwpxDynamicBuilder 직접 사용 시도 동일하게 적용
+from docpilot.builder import HwpxDynamicBuilder
+from docpilot.mapping.claude import ClaudeMapper
+
+builder = HwpxDynamicBuilder(
+    mapper=ClaudeMapper(model="claude-opus-4-8"),  # 고성능 모델 지정
+)
+builder.build("소스 텍스트", "header.xml", "output.hwpx", instructions="학회 발표 보고서")
 ```
 
 ### 기존 .hwpx에서 스타일만 가져오기
