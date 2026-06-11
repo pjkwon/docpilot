@@ -1,10 +1,29 @@
 from __future__ import annotations
 
 import os
+import threading
+from dataclasses import dataclass
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 _pilot = None
+
+
+# ---------------------------------------------------------------------------
+# 백그라운드 인덱싱 상태
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _IndexJob:
+    thread: threading.Thread
+    done_event: threading.Event
+    count: int = 0
+    error: Exception | None = None
+
+
+_index_jobs: dict[str, _IndexJob] = {}
+_index_jobs_lock = threading.Lock()
 
 
 def _get_pilot():
@@ -39,20 +58,49 @@ def index(data_folder: str, reindex: bool = False) -> str:
 
     generate()는 내부적으로 인덱싱을 자동 수행하므로, 순수 검색 목적으로만
     인덱스를 쌓을 때 이 도구를 직접 사용합니다.
+    인덱싱은 백그라운드에서 실행되며 즉시 반환됩니다.
 
     Args:
         data_folder: 인덱싱할 파일이 있는 폴더 경로 (절대 경로 권장, 하위 폴더 재귀 탐색)
         reindex: True이면 이미 인덱싱된 파일도 강제 재인덱싱 (기본값: False)
     """
-    from docpilot.db import indexer
+    folder_key = str(Path(data_folder).resolve())
 
-    pilot = _get_pilot()
-    doc_ids = indexer.index_folder(
-        data_folder,
-        embed_fn=pilot._embed_fn,
-        force=reindex,
+    with _index_jobs_lock:
+        existing = _index_jobs.get(folder_key)
+        if existing and existing.thread.is_alive():
+            return f"이미 인덱싱 진행 중: {data_folder} — 완료 후 재시도하세요."
+
+    done = threading.Event()
+    job = _IndexJob(thread=None, done_event=done)  # type: ignore[arg-type]
+
+    def _run() -> None:
+        try:
+            from docpilot.db import indexer
+            pilot = _get_pilot()
+            doc_ids = indexer.index_folder(
+                data_folder,
+                embed_fn=pilot._embed_fn,
+                force=reindex,
+            )
+            job.count = len(doc_ids)
+        except Exception as exc:
+            job.error = exc
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_run, daemon=True, name=f"docpilot-index-{folder_key}")
+    job.thread = t
+
+    with _index_jobs_lock:
+        _index_jobs[folder_key] = job
+
+    t.start()
+    return (
+        f"인덱싱 시작됨: {data_folder}\n"
+        "백그라운드에서 진행 중입니다. "
+        "generate() 호출 시 완료를 자동으로 기다립니다."
     )
-    return f"인덱싱 완료: {len(doc_ids)}개 문서 등록 ({data_folder})"
 
 
 @mcp.tool()
@@ -219,6 +267,22 @@ def generate(
     """
     if output is None:
         output = _default_output(template)
+
+    # 같은 폴더에 백그라운드 인덱싱이 진행 중이면 완료를 기다린다 (최대 3.5분)
+    folder_key = str(Path(data_folder).resolve())
+    with _index_jobs_lock:
+        job = _index_jobs.get(folder_key)
+
+    if job and job.thread.is_alive():
+        completed = job.done_event.wait(timeout=210)
+        if not completed:
+            return (
+                "인덱싱이 아직 진행 중입니다 (3.5분 대기 초과).\n"
+                "잠시 후 다시 generate()를 호출하세요."
+            )
+        if job.error:
+            return f"인덱싱 중 오류 발생: {job.error}"
+
     result = _get_pilot().generate(
         data_folder=data_folder,
         template=template,
