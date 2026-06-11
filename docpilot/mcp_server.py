@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import threading
-from dataclasses import dataclass
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -14,12 +13,12 @@ _pilot = None
 # 백그라운드 인덱싱 상태
 # ---------------------------------------------------------------------------
 
-@dataclass
 class _IndexJob:
-    thread: threading.Thread
-    done_event: threading.Event
-    count: int = 0
-    error: Exception | None = None
+    def __init__(self, thread: threading.Thread, done_event: threading.Event) -> None:
+        self.thread = thread
+        self.done_event = done_event
+        self.count: int = 0
+        self.error: Exception | None = None
 
 
 _index_jobs: dict[str, _IndexJob] = {}
@@ -72,7 +71,6 @@ def index(data_folder: str, reindex: bool = False) -> str:
             return f"이미 인덱싱 진행 중: {data_folder} — 완료 후 재시도하세요."
 
     done = threading.Event()
-    job = _IndexJob(thread=None, done_event=done)  # type: ignore[arg-type]
 
     def _run() -> None:
         try:
@@ -90,7 +88,7 @@ def index(data_folder: str, reindex: bool = False) -> str:
             done.set()
 
     t = threading.Thread(target=_run, daemon=True, name=f"docpilot-index-{folder_key}")
-    job.thread = t
+    job = _IndexJob(thread=t, done_event=done)  # _run이 참조하는 job은 start() 전에 할당됨
 
     with _index_jobs_lock:
         _index_jobs[folder_key] = job
