@@ -185,10 +185,13 @@ def _parse_dt(s: str):
 # 기존 도구
 # ---------------------------------------------------------------------------
 
-def _default_output(ext: str = ".hwpx") -> str:
+def _default_output(template: str, ext: str = ".hwpx") -> str:
     from datetime import datetime
     from pathlib import Path
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tpl_ext = Path(template).suffix.lower()
+    if tpl_ext in (".docx", ".pdf"):
+        ext = tpl_ext
     docs = Path.home() / "Documents"
     docs.mkdir(exist_ok=True)
     return str(docs / f"docpilot_{ts}{ext}")
@@ -215,7 +218,7 @@ def generate(
         instructions_doc: 작성 지침으로 사용할 파일 경로 (RFP·제안요청서 등). 파일 내용이 자동으로 지침에 추가됩니다.
     """
     if output is None:
-        output = _default_output()
+        output = _default_output(template)
     result = _get_pilot().generate(
         data_folder=data_folder,
         template=template,
