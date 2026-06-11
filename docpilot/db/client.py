@@ -58,9 +58,12 @@ def create_tables() -> None:
 
     if _backend == "sqlite":
         with engine.begin() as conn:
-            conn.execute(text(
-                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash TEXT"
-            ))
+            existing = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(documents)"))
+            }
+            if "file_hash" not in existing:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN file_hash TEXT"))
         with engine.begin() as conn:
             conn.execute(text(
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks "
