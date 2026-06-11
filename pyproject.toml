@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=61", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "docpilot"
-version = "0.1.0"
+dynamic = ["version"]
 description = "LLM-powered document generation from data sources and templates"
 readme = "README.md"
 license = { text = "MIT" }
@@ -69,6 +69,10 @@ dev = ["pytest>=8.0", "pytest-mock>=3.0"]
 
 [project.scripts]
 docpilot-mcp = "docpilot.mcp_server:main"
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
 
 [tool.setuptools.packages.find]
 where = ["."]

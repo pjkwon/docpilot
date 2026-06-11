@@ -3,6 +3,12 @@ from __future__ import annotations
 import atexit
 import os
 import re
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("docpilot")
+except PackageNotFoundError:
+    __version__ = "0.0.0+unknown"
 import tempfile
 import zipfile
 from dataclasses import dataclass
