@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -18,12 +19,21 @@ _CHUNK_OVERLAP = 200
 _MIN_CHUNK_SIZE = 200
 
 
+def _compute_hash(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def index(
     doc: IngestedDocument,
     embed_fn: EmbedFn | None = None,
     chunk_size: int = _CHUNK_SIZE,
     overlap: int = _CHUNK_OVERLAP,
     min_chunk_size: int = _MIN_CHUNK_SIZE,
+    file_hash: str | None = None,
 ) -> int:
     """
     Index an IngestedDocument into the database.
@@ -44,6 +54,7 @@ def index(
             source=str(doc.source),
             mime_type=doc.mime_type,
             content=doc.content,
+            file_hash=file_hash,
             metadata_=doc.metadata,
         )
         db.add(db_doc)
@@ -72,6 +83,7 @@ def reindex(
     chunk_size: int = _CHUNK_SIZE,
     overlap: int = _CHUNK_OVERLAP,
     min_chunk_size: int = _MIN_CHUNK_SIZE,
+    file_hash: str | None = None,
 ) -> int:
     """Delete existing document and re-index from scratch."""
     with client.session() as db:
@@ -83,7 +95,7 @@ def reindex(
         if existing:
             db.delete(existing)
 
-    return index(doc, embed_fn=embed_fn, chunk_size=chunk_size, overlap=overlap, min_chunk_size=min_chunk_size)
+    return index(doc, embed_fn=embed_fn, chunk_size=chunk_size, overlap=overlap, min_chunk_size=min_chunk_size, file_hash=file_hash)
 
 
 def index_folder(
@@ -121,8 +133,25 @@ def index_folder(
         if not ingester:
             continue
         try:
-            doc = ingester(file)
-            doc_id = reindex(doc, embed_fn=embed_fn) if force else index(doc, embed_fn=embed_fn)
+            file_hash = _compute_hash(file)
+            if force:
+                doc = ingester(file)
+                doc_id = reindex(doc, embed_fn=embed_fn, file_hash=file_hash)
+            else:
+                with client.session() as db:
+                    existing = (
+                        db.query(Document)
+                        .filter(Document.source == str(file))
+                        .first()
+                    )
+                if existing is not None and existing.file_hash == file_hash:
+                    doc_ids.append(existing.id)
+                    continue
+                doc = ingester(file)
+                if existing is not None:
+                    doc_id = reindex(doc, embed_fn=embed_fn, file_hash=file_hash)
+                else:
+                    doc_id = index(doc, embed_fn=embed_fn, file_hash=file_hash)
             doc_ids.append(doc_id)
         except IngestionError as e:
             import sys

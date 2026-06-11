@@ -59,6 +59,10 @@ def create_tables() -> None:
     if _backend == "sqlite":
         with engine.begin() as conn:
             conn.execute(text(
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash TEXT"
+            ))
+        with engine.begin() as conn:
+            conn.execute(text(
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks "
                 f"USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[{EMBEDDING_DIM}])"
             ))
@@ -111,6 +115,9 @@ def create_tables() -> None:
             conn.execute(text(
                 f"ALTER TABLE chunks "
                 f"ADD COLUMN IF NOT EXISTS embedding vector({EMBEDDING_DIM})"
+            ))
+            conn.execute(text(
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64)"
             ))
 
 
