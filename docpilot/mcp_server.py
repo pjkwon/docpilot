@@ -165,7 +165,20 @@ def search(
     if mode == "exact":
         results = exact.search(query, top_k=top_k, filters=filters)
     elif mode == "morpheme":
-        results = morpheme.search(query, top_k=top_k, or_fallback=True, filters=filters)
+        try:
+            results = morpheme.search(query, top_k=top_k, or_fallback=True, filters=filters)
+        except Exception as e:
+            if "kiwipiepy" in str(e):
+                results = exact.search(query, top_k=top_k, filters=filters)
+                if not results:
+                    return (
+                        "검색 결과가 없습니다.\n"
+                        "[참고] kiwipiepy 미설치로 exact 검색으로 대체되었습니다. "
+                        "형태소 검색을 사용하려면: pip install \"docpilot[morpheme]\""
+                    )
+                highlight = False  # exact 결과엔 형태소 하이라이팅 불필요
+            else:
+                raise
     elif mode == "vector":
         if pilot._embed_fn is None:
             return (
