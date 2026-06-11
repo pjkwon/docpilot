@@ -144,11 +144,13 @@ def index_folder(
                         .filter(Document.source == str(file))
                         .first()
                     )
-                if existing is not None and existing.file_hash == file_hash:
-                    doc_ids.append(existing.id)
+                    existing_id: int | None = existing.id if existing else None
+                    existing_hash: str | None = existing.file_hash if existing else None
+                if existing_id is not None and existing_hash == file_hash:
+                    doc_ids.append(existing_id)
                     continue
                 doc = ingester(file)
-                if existing is not None:
+                if existing_id is not None:
                     doc_id = reindex(doc, embed_fn=embed_fn, file_hash=file_hash)
                 else:
                     doc_id = index(doc, embed_fn=embed_fn, file_hash=file_hash)
