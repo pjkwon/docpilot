@@ -29,9 +29,9 @@ pip install "docpilot[pdf,mcp]"
 extras 포함 시 `패키지명[extras] @ URL` 형식을 사용합니다.
 
 ```bash
-pip install "docpilot @ git+https://github.com/wynterkwon/docpilot.git"
-pip install "docpilot[mcp] @ git+https://github.com/wynterkwon/docpilot.git"
-pip install "docpilot[pdf,mcp] @ git+https://github.com/wynterkwon/docpilot.git"
+pip install "docpilot @ git+https://github.com/pjkwon/docpilot.git"
+pip install "docpilot[mcp] @ git+https://github.com/pjkwon/docpilot.git"
+pip install "docpilot[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
 ```
 
 ### Extras
@@ -697,15 +697,18 @@ Claude 앱에서 docpilot 도구를 직접 사용하려면 MCP 서버를 설치�
 예시는 PyPI 기준. GitHub 레포 참조해 설치 시 `@ git+https://github.com/pjkwon/docpilot.git` 추가
 
 ```bash
-pip install "docpilot[mcp]"
+pip install "docpilot[mcp]" //PyPI 기준
+pip install "docpilot[mcp] @ git+https://github.com/pjkwon/docpilot.git" //GitHub 레포 참조 설치 기준 
 ```
 
 ### Claude Desktop 연결
+`ANTHROPIC_API_KEY`는 [console.anthropic.com](https://console.anthropic.com)에서 발급받습니다.
 
 `claude_desktop_config.json`에 아래 블록을 추가합니다.
 
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Windows** (.exe로 설치한 경우 ): `%APPDATA%\Claude\claude_desktop_config.json`  
+- **Windows** (Microsoft Store/MSIX로 설치한 경우): `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -737,7 +740,7 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 |------|------|
 | `index` | 데이터 폴더를 검색 인덱스에 등록 (변경된 파일만 자동 재인덱싱) |
 | `search` | 인덱싱된 문서 검색 (필터·하이라이팅·문서 단위 집계 지원) |
-| `generate` | 데이터 폴더 + 템플릿 → 문서 생성 |
+| `generate` | 데이터 폴더 + 템플릿 → 문서 생성 (output 미지정 시 `~/Documents/docpilot_YYYYMMDD_HHMMSS.hwpx`) |
 | `generate_template` | 샘플 HWPX → 재사용 가능한 템플릿 생성 |
 | `estimate_cost` | 생성 전 API 토큰 비용 추정 |
 

@@ -185,11 +185,20 @@ def _parse_dt(s: str):
 # 기존 도구
 # ---------------------------------------------------------------------------
 
+def _default_output(ext: str = ".hwpx") -> str:
+    from datetime import datetime
+    from pathlib import Path
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    docs = Path.home() / "Documents"
+    docs.mkdir(exist_ok=True)
+    return str(docs / f"docpilot_{ts}{ext}")
+
+
 @mcp.tool()
 def generate(
     data_folder: str,
     template: str,
-    output: str,
+    output: str | None = None,
     reindex: bool = False,
     extra_instructions: str | None = None,
     instructions_doc: str | None = None,
@@ -199,11 +208,14 @@ def generate(
     Args:
         data_folder: 데이터 파일이 있는 폴더 경로 (절대 경로 권장)
         template: 템플릿 파일 경로 또는 내장 템플릿 이름 (report / gonmun / minutes / proposal)
-        output: 출력 파일 경로 — 확장자가 출력 형식을 결정합니다 (.hwpx / .pdf / .docx)
+        output: 출력 파일 경로 — 확장자가 출력 형식을 결정합니다 (.hwpx / .pdf / .docx).
+                미지정 시 ~/Documents/docpilot_YYYYMMDD_HHMMSS.hwpx 에 저장됩니다.
         reindex: True이면 데이터 폴더를 강제로 재인덱싱합니다 (기본값: False)
         extra_instructions: LLM 프롬프트에 추가할 작성 지침 문자열
         instructions_doc: 작성 지침으로 사용할 파일 경로 (RFP·제안요청서 등). 파일 내용이 자동으로 지침에 추가됩니다.
     """
+    if output is None:
+        output = _default_output()
     result = _get_pilot().generate(
         data_folder=data_folder,
         template=template,
