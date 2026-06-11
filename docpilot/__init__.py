@@ -232,6 +232,25 @@ def _validate_hwpx(path: Path) -> None:
         logging.getLogger(__name__).debug("HWPX 검증 실패 (무시됨): %s", exc)
 
 
+def _estimate_tokens_from_folder(folder: Path, n_sections: int) -> int:
+    """Rough token estimate from data folder file sizes. ~0.4 tokens/byte for Korean text."""
+    _TEXT_EXTS = {".txt", ".md", ".rst", ".csv", ".hwpx", ".docx", ".pptx"}
+    _BINARY_EXTS = {".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
+    total_bytes = 0
+    for f in folder.rglob("*"):
+        if not f.is_file():
+            continue
+        ext = f.suffix.lower()
+        if ext in _TEXT_EXTS:
+            total_bytes += f.stat().st_size
+        elif ext in _BINARY_EXTS:
+            total_bytes += f.stat().st_size * 3  # OCR/extracted text is larger than raw binary
+    tokens_per_byte = 0.4
+    raw_tokens = int(total_bytes * tokens_per_byte)
+    # RAG retrieves a subset, not the full corpus — cap at ~4,000 tokens per section
+    return min(raw_tokens, n_sections * 4000)
+
+
 def _extract_placeholders(template_path: Path) -> list[str]:
     """Extract {{section}} placeholder names from a template file."""
     suffix = template_path.suffix.lower()
@@ -453,18 +472,15 @@ class DocPilot:
         self,
         data_folder: str | Path,
         template: str | Path,
+        quick: bool = False,
     ) -> str:
         """
-        Estimate API token cost before generating. No LLM call is made.
+        Estimate API token cost before generating.
 
-        Indexes the data folder, runs RAG retrieval, and calls the token-counting
-        API to get an accurate input token count. Output tokens are estimated at
-        500 per section. Returns a formatted cost report string.
+        quick=True (default in MCP): file-size based estimate, no indexing or API call.
+        quick=False: full indexing + RAG retrieval + token-counting API for accuracy.
         """
         template_path = self._resolve_template(template)
-
-        from docpilot.db import indexer
-        indexer.index_folder(data_folder, embed_fn=self._embed_fn)
 
         from docpilot.mapping.base import TemplateSection
         sections = [TemplateSection(name=s) for s in _extract_placeholders(template_path)]
@@ -474,6 +490,30 @@ class DocPilot:
                 detail=str(template_path),
             )
 
+        model: str = getattr(self._mapper, "_model", "claude-sonnet-4-6")
+        in_price, out_price = _MODEL_PRICING.get(model, (3.00, 15.00))
+        est_output = len(sections) * _EST_OUTPUT_TOKENS_PER_SECTION
+
+        if quick:
+            input_tokens = _estimate_tokens_from_folder(Path(data_folder), len(sections))
+            input_cost = input_tokens / 1_000_000 * in_price
+            output_cost = est_output / 1_000_000 * out_price
+            lines = [
+                "=== docpilot 비용 추정 (빠른 추정) ===",
+                f"모델:             {model}",
+                f"섹션 수:          {len(sections)}개",
+                f"입력 토큰 (추정): {input_tokens:,}  (파일 크기 기반, ±30% 오차)",
+                f"출력 토큰 (추정): {est_output:,}  (섹션당 {_EST_OUTPUT_TOKENS_PER_SECTION} 추정)",
+                f"예상 비용:        ${input_cost + output_cost:.4f}",
+                f"  입력 ${in_price:.2f}/1M  →  ${input_cost:.4f}",
+                f"  출력 ${out_price:.2f}/1M  →  ${output_cost:.4f}",
+                "",
+                "정확한 추정: estimate_cost(quick=False) — 인덱싱 + 토큰 카운팅 API 사용",
+            ]
+            return "\n".join(lines)
+
+        from docpilot.db import indexer
+        indexer.index_folder(data_folder, embed_fn=self._embed_fn)
         content = self._rag_mapper.retrieve_content(sections)
 
         if not hasattr(self._mapper, "count_tokens"):
@@ -485,14 +525,9 @@ class DocPilot:
                 f"대략 {n * 3000:,} 입력 / {n * _EST_OUTPUT_TOKENS_PER_SECTION:,} 출력 예상"
             )
 
-        input_tokens: int = self._mapper.count_tokens(content, sections)
-        est_output = len(sections) * _EST_OUTPUT_TOKENS_PER_SECTION
-
-        model: str = getattr(self._mapper, "_model", "claude-sonnet-4-6")
-        in_price, out_price = _MODEL_PRICING.get(model, (3.00, 15.00))
+        input_tokens = self._mapper.count_tokens(content, sections)
         input_cost = input_tokens / 1_000_000 * in_price
         output_cost = est_output / 1_000_000 * out_price
-        total_cost = input_cost + output_cost
 
         lines = [
             "=== docpilot 비용 추정 ===",
@@ -500,7 +535,7 @@ class DocPilot:
             f"섹션 수:          {len(sections)}개",
             f"입력 토큰:        {input_tokens:,}",
             f"출력 토큰 (추정): {est_output:,}  (섹션당 {_EST_OUTPUT_TOKENS_PER_SECTION} 추정)",
-            f"예상 비용:        ${total_cost:.4f}",
+            f"예상 비용:        ${input_cost + output_cost:.4f}",
             f"  입력 ${in_price:.2f}/1M  →  ${input_cost:.4f}",
             f"  출력 ${out_price:.2f}/1M  →  ${output_cost:.4f}",
         ]

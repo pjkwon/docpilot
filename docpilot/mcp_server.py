@@ -261,19 +261,20 @@ def generate_template(
 def estimate_cost(
     data_folder: str,
     template: str,
+    quick: bool = True,
 ) -> str:
     """문서 생성 전 예상 API 토큰 비용을 추정합니다. 실제 문서는 생성하지 않습니다.
-
-    데이터 폴더 인덱싱과 RAG 검색까지는 수행하지만, LLM 완성 호출 없이
-    token-counting API만 사용하므로 비용이 거의 발생하지 않습니다.
 
     Args:
         data_folder: 데이터 파일이 있는 폴더 경로
         template: 템플릿 파일 경로 또는 내장 템플릿 이름
+        quick: True(기본값)이면 파일 크기 기반 즉시 추정 (±30% 오차, API 호출 없음).
+               False이면 인덱싱 + RAG + 토큰 카운팅 API로 정확하게 추정 (수 분 소요).
     """
     return _get_pilot().estimate_cost(
         data_folder=data_folder,
         template=template,
+        quick=quick,
     )
 
 
