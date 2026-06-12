@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from docpilot.search.highlight import highlight, render
+from docpilot.search.hybrid import hybrid
 from docpilot.search.models import DocumentResult, SearchFilter, SearchResult
 
 
@@ -59,4 +60,5 @@ __all__ = [
     "group_by_document",
     "highlight",
     "render",
+    "hybrid",
 ]

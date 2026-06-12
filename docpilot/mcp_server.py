@@ -111,7 +111,7 @@ def index(data_folder: str, reindex: bool = False) -> str:
 def search(
     query: str,
     data_folder: str | None = None,
-    mode: str = "morpheme",
+    mode: str = "hybrid",
     top_k: int = 10,
     group_by_doc: bool = False,
     highlight: bool = True,
@@ -130,8 +130,8 @@ def search(
     Args:
         query: 검색 질의 문자열
         data_folder: index()에 사용한 폴더 경로 (인덱싱 완료 확인용, 선택)
-        mode: 검색 방식 — "exact"(키워드 LIKE), "morpheme"(형태소 BM25, 기본값),
-              "vector"(벡터 유사도, embed_fn 구성 필요)
+        mode: 검색 방식 — "hybrid"(BM25+Vector RRF, 기본값), "morpheme"(형태소 BM25),
+              "exact"(키워드 LIKE), "vector"(벡터 유사도, embed_fn 구성 필요)
         top_k: 반환할 최대 결과 수 (기본값: 10)
         group_by_doc: True이면 결과를 문서 단위로 집계하여 반환 (기본값: False)
         highlight: True이면 쿼리 텀을 ** 마커로 강조 (기본값: True)
@@ -213,8 +213,26 @@ def search(
             )
         from docpilot.search import embedding as emb_mod
         results = emb_mod.search(query, embed_fn=pilot._embed_fn, top_k=top_k, filters=filters)
+    elif mode == "hybrid":
+        from docpilot.search.hybrid import hybrid as hybrid_search
+        try:
+            results = hybrid_search(
+                query, embed_fn=pilot._embed_fn, top_k=top_k, filters=filters, or_fallback=True
+            )
+        except Exception as e:
+            if "kiwipiepy" in str(e):
+                results = exact.search(query, top_k=top_k, filters=filters)
+                if not results:
+                    return (
+                        "검색 결과가 없습니다.\n"
+                        "[참고] kiwipiepy 미설치로 exact 검색으로 대체되었습니다. "
+                        "형태소 검색을 사용하려면: pip install \"docpilot[morpheme]\""
+                    )
+                highlight = False
+            else:
+                raise
     else:
-        return f"알 수 없는 mode: {mode!r}. 'exact' / 'morpheme' / 'vector' 중 선택하세요."
+        return f"알 수 없는 mode: {mode!r}. 'hybrid' / 'morpheme' / 'exact' / 'vector' 중 선택하세요."
 
     if not results:
         return "검색 결과가 없습니다."

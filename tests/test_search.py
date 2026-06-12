@@ -281,3 +281,122 @@ class TestGroupByDocument:
     def test_empty_input(self):
         from docpilot.search import group_by_document
         assert group_by_document([]) == []
+
+
+# ---------------------------------------------------------------------------
+# HybridSearch
+# ---------------------------------------------------------------------------
+
+class TestHybridSearch:
+    def _make(self, chunk_id, doc_id=1, source="f.txt", content="내용", score=0.5):
+        return SearchResult(
+            chunk_id=chunk_id,
+            document_id=doc_id,
+            source=source,
+            content=content,
+            score=score,
+        )
+
+    def test_empty_query_raises(self):
+        from docpilot.search.hybrid import hybrid
+        with pytest.raises(Exception, match="empty"):
+            hybrid("   ")
+
+    def test_bm25_only_when_no_embed_fn(self):
+        """embed_fn 없으면 morpheme 결과를 그대로 반환."""
+        from docpilot.search.hybrid import hybrid
+        bm25_results = [self._make(1), self._make(2)]
+
+        with patch("docpilot.search.hybrid.morpheme.search", return_value=bm25_results):
+            results = hybrid("테스트", embed_fn=None, top_k=5)
+
+        assert results == bm25_results
+
+    def test_bm25_only_when_vector_empty(self):
+        """벡터 결과가 비어있으면 BM25 결과만 반환."""
+        from docpilot.search.hybrid import hybrid
+        bm25_results = [self._make(1), self._make(2)]
+        embed_fn = MagicMock(return_value=[0.1] * 4)
+
+        with (
+            patch("docpilot.search.hybrid.morpheme.search", return_value=bm25_results),
+            patch("docpilot.search.embedding.search", return_value=[]),
+        ):
+            results = hybrid("테스트", embed_fn=embed_fn, top_k=5)
+
+        assert results == bm25_results
+
+    def test_rrf_fusion_merges_both_lanes(self):
+        """두 레인 결과가 합쳐져 top_k 내에서 반환된다."""
+        from docpilot.search.hybrid import hybrid
+        bm25_results = [self._make(1, score=0.9), self._make(2, score=0.7)]
+        vec_results = [self._make(3, score=0.95), self._make(1, score=0.8)]
+        embed_fn = MagicMock(return_value=[0.1] * 4)
+
+        with (
+            patch("docpilot.search.hybrid.morpheme.search", return_value=bm25_results),
+            patch("docpilot.search.embedding.search", return_value=vec_results),
+        ):
+            results = hybrid("테스트", embed_fn=embed_fn, top_k=10)
+
+        chunk_ids = [r.chunk_id for r in results]
+        assert 1 in chunk_ids
+        assert 2 in chunk_ids
+        assert 3 in chunk_ids
+
+    def test_rrf_boosted_chunk_ranks_higher(self):
+        """두 레인 모두에 나타난 청크가 한 레인만 있는 것보다 높은 점수를 받는다."""
+        from docpilot.search.hybrid import hybrid
+        # chunk 1: BM25 rank 0 + vector rank 0 → 최고 점수
+        # chunk 2: BM25 rank 1 only
+        # chunk 3: vector rank 1 only
+        bm25_results = [self._make(1, score=0.9), self._make(2, score=0.8)]
+        vec_results = [self._make(1, score=0.95), self._make(3, score=0.85)]
+        embed_fn = MagicMock(return_value=[0.1] * 4)
+
+        with (
+            patch("docpilot.search.hybrid.morpheme.search", return_value=bm25_results),
+            patch("docpilot.search.embedding.search", return_value=vec_results),
+        ):
+            results = hybrid("테스트", embed_fn=embed_fn, top_k=10)
+
+        scores = {r.chunk_id: r.score for r in results}
+        # chunk 1이 두 레인에 모두 있으므로 단일 레인 청크보다 점수가 높아야 함
+        assert scores[1] > scores[2]
+        assert scores[1] > scores[3]
+
+    def test_top_k_limits_results(self):
+        """top_k를 초과하지 않는다."""
+        from docpilot.search.hybrid import hybrid
+        bm25_results = [self._make(i, score=1.0 / (i + 1)) for i in range(10)]
+        vec_results = [self._make(i + 10, score=1.0 / (i + 1)) for i in range(10)]
+        embed_fn = MagicMock(return_value=[0.1] * 4)
+
+        with (
+            patch("docpilot.search.hybrid.morpheme.search", return_value=bm25_results),
+            patch("docpilot.search.embedding.search", return_value=vec_results),
+        ):
+            results = hybrid("테스트", embed_fn=embed_fn, top_k=5)
+
+        assert len(results) == 5
+
+    def test_rrf_k_constant(self):
+        """RRF 상수 k=60 기준: rank 0의 점수는 1/(60+1)."""
+        from docpilot.search.hybrid import _RRF_K
+        assert _RRF_K == 60
+
+    def test_results_sorted_by_rrf_score_descending(self):
+        """반환 결과는 RRF 점수 내림차순이다."""
+        from docpilot.search.hybrid import hybrid
+        bm25_results = [self._make(1, score=0.9), self._make(2, score=0.5)]
+        vec_results = [self._make(2, score=0.95), self._make(1, score=0.4)]
+        embed_fn = MagicMock(return_value=[0.1] * 4)
+
+        with (
+            patch("docpilot.search.hybrid.morpheme.search", return_value=bm25_results),
+            patch("docpilot.search.embedding.search", return_value=vec_results),
+        ):
+            results = hybrid("테스트", embed_fn=embed_fn, top_k=10)
+
+        for i in range(len(results) - 1):
+            assert results[i].score >= results[i + 1].score

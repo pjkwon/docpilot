@@ -466,28 +466,50 @@ pilot.generate_template(samples=[...], output="./templates/my_report.docx", use_
 
 ### 개별 검색 API
 
-```python
-from docpilot.search import exact, embedding, morpheme
+#### DocPilot.search() — 통합 인터페이스
 
-# 키워드 정확 검색
-results = exact.search("사업 계획")
+인덱싱 후 `pilot.search()`로 검색할 수 있습니다. 기본 모드는 하이브리드(BM25 + Vector RRF)입니다.
+
+```python
+pilot = DocPilot(embed_fn=bge_embed_fn())
+pilot.index("./data")
+
+# 기본: 하이브리드 검색 (BM25 + 벡터 RRF)
+results = pilot.search("사업 계획", top_k=10)
+
+# 모드 선택
+results = pilot.search("사업 계획", mode="bm25")    # 형태소 BM25만
+results = pilot.search("사업 계획", mode="vector")  # 벡터만
+results = pilot.search("사업 계획", mode="exact")   # ILIKE 키워드만
+```
+
+#### 저수준 API
+
+```python
+from docpilot.search import exact, embedding, morpheme, hybrid
+
+# 하이브리드 — BM25 + Vector → RRF 병합 (embed_fn 없으면 BM25만)
+from docpilot.search.embedding import bge_embed_fn
+results = hybrid("사업 계획", embed_fn=bge_embed_fn(), top_k=10)
 
 # 형태소 기반 검색 — pip install "docpilot[morpheme]"
 # SQLite: FTS5 역인덱스 + BM25 랭킹 / PostgreSQL: Jaccard 유사도
-# or_fallback=True: AND 결과 없으면 OR로 재시도
 results = morpheme.search("사업 계획", or_fallback=True)
 
-# 벡터 유사도 검색 — embed_fn을 아래 임베딩 제공자 중 선택해서 전달
+# 벡터 유사도 검색
 from docpilot.search.embedding import openai_embed_fn
 results = embedding.search("사업 계획", embed_fn=openai_embed_fn())
+
+# 키워드 정확 검색
+results = exact.search("사업 계획")
 ```
 
 ### 검색 필터 (SearchFilter)
 
-세 검색 함수 모두 `filters` 파라미터를 받습니다. 필터 조건은 AND로 결합됩니다.
+네 검색 함수 모두 `filters` 파라미터를 받습니다. 필터 조건은 AND로 결합됩니다.
 
 ```python
-from docpilot.search import SearchFilter, exact, morpheme
+from docpilot.search import SearchFilter, hybrid, exact, morpheme
 
 f = SearchFilter(
     source_pattern="reports/*.hwpx",          # 파일 경로 glob 패턴 (*, ? 지원)
@@ -497,6 +519,7 @@ f = SearchFilter(
     created_before=datetime(2026, 12, 31),
 )
 
+results = hybrid("사업 계획", embed_fn=..., filters=f)
 results = exact.search("사업 계획", filters=f)
 results = morpheme.search("사업 계획", filters=f)
 results = embedding.search("사업 계획", embed_fn=..., filters=f)

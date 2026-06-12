@@ -351,6 +351,50 @@ class DocPilot:
         from docpilot.db import indexer
         return indexer.index_folder(data_folder, embed_fn=self._embed_fn)
 
+    def search(
+        self,
+        query: str,
+        top_k: int = 10,
+        mode: str = "hybrid",
+        filters=None,
+        or_fallback: bool = True,
+    ):
+        """
+        Search indexed documents.
+
+        mode:
+            ``"hybrid"``  — BM25 + Vector fused with RRF (default; falls back to BM25 when no embed_fn).
+            ``"bm25"``    — Morpheme FTS5 / BM25 only.
+            ``"vector"``  — Vector similarity only (embed_fn required).
+            ``"exact"``   — ILIKE keyword match.
+        filters:
+            ``SearchFilter`` instance for source/MIME/metadata/date constraints.
+        or_fallback:
+            For BM25/hybrid — retry with OR logic when AND returns no results.
+        """
+        from docpilot.exceptions import SearchError
+        from docpilot.search import exact, morpheme
+
+        match mode:
+            case "exact":
+                return exact.search(query, top_k=top_k, filters=filters)
+            case "bm25":
+                return morpheme.search(query, top_k=top_k, or_fallback=or_fallback, filters=filters)
+            case "vector":
+                if self._embed_fn is None:
+                    raise SearchError("embed_fn required for vector mode")
+                from docpilot.search import embedding
+                return embedding.search(query, embed_fn=self._embed_fn, top_k=top_k, filters=filters)
+            case _:  # "hybrid"
+                from docpilot.search.hybrid import hybrid
+                return hybrid(
+                    query,
+                    embed_fn=self._embed_fn,
+                    top_k=top_k,
+                    filters=filters,
+                    or_fallback=or_fallback,
+                )
+
     def generate(
         self,
         data_folder: str | Path,
