@@ -85,3 +85,8 @@ docpilot = ["templates/**/*"]
 dev = [
     "pytest>=9.0.3",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: tests that load real models or index real files (deselect with -m 'not slow')",
+]

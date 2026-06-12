@@ -572,6 +572,46 @@ for doc in docs:
 | `top_chunks` | 상위 청크 `SearchResult` 목록 |
 | `metadata` | 문서 메타데이터 |
 
+### 검색 품질 평가 (eval)
+
+`docpilot.search.eval`은 Precision@K · Recall@K · MRR을 계산하는 순수 함수 모음입니다.  
+ground truth 케이스를 정의하면 검색 변경 전후 지표를 비교하거나, 테스트 임계값으로 회귀를 감지할 수 있습니다.
+
+```python
+from docpilot.search.eval import QueryCase, evaluate
+from docpilot.search.hybrid import hybrid
+from docpilot.search.embedding import default_embed_fn
+
+embed = default_embed_fn()
+
+cases = [
+    QueryCase("사출기 PLC 데이터 수집 MES", {"현장답사.docx"}),
+    QueryCase("AMR 팔레트 이송 사출품", {"AMR_회의록.docx"}),
+]
+
+report = evaluate(
+    cases,
+    search_fn=lambda q: hybrid(q, embed_fn=embed, top_k=10),
+    ks=[1, 3, 5],
+)
+print(report)
+# EvalReport (n=2)
+#   P@1=1.000  R@1=1.000
+#   P@3=0.333  R@3=1.000
+#   P@5=0.200  R@5=1.000
+#   MRR=1.000
+```
+
+`relevant_sources`는 `SearchResult.source`의 **basename**으로 매칭합니다.  
+같은 문서에서 여러 청크가 나와도 한 번만 카운트합니다(중복 제거).
+
+| 함수 | 설명 |
+|------|------|
+| `precision_at_k(results, relevant, k)` | top-k 내 유니크 관련 문서 수 / k |
+| `recall_at_k(results, relevant, k)` | top-k 내 유니크 관련 문서 수 / 전체 관련 문서 수 |
+| `mrr(results, relevant)` | 첫 번째 관련 청크의 역순위 |
+| `evaluate(cases, search_fn, ks)` | 전체 케이스 평균 → `EvalReport` 반환 |
+
 ## 임베딩 제공자
 
 docpilot은 벡터 검색(RAG)에 사용할 임베딩 제공자를 자유롭게 선택할 수 있습니다.  
