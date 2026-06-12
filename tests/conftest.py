@@ -92,6 +92,40 @@ def make_hwpx(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
+# CLI 옵션
+# ---------------------------------------------------------------------------
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--data-dir",
+        default=None,
+        metavar="PATH",
+        help="성능 테스트용 데이터 폴더 경로 (미지정 시 프로젝트 루트의 data/ 사용)",
+    )
+    parser.addoption(
+        "--with-embed",
+        action="store_true",
+        default=False,
+        help="카운팅 목업 embed_fn으로 임베딩 배치 호출 횟수도 측정",
+    )
+
+
+@pytest.fixture()
+def perf_data_dir(request) -> Path:
+    """--data-dir CLI 인자로 지정한 경로, 없으면 프로젝트 루트 data/ 폴더."""
+    custom = request.config.getoption("--data-dir")
+    if custom:
+        p = Path(custom)
+        if not p.is_dir():
+            pytest.skip(f"--data-dir 경로가 존재하지 않습니다: {p}")
+        return p
+    default = Path(__file__).parent.parent / "data"
+    if not default.is_dir():
+        pytest.skip("data/ 폴더 없음 — --data-dir PATH 로 지정하세요")
+    return default
+
+
+# ---------------------------------------------------------------------------
 # DocPilot instance fixtures
 # ---------------------------------------------------------------------------
 
