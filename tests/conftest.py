@@ -108,6 +108,13 @@ def pytest_addoption(parser):
         default=False,
         help="카운팅 목업 embed_fn으로 임베딩 배치 호출 횟수도 측정",
     )
+    parser.addoption(
+        "--embed-latency-ms",
+        type=float,
+        default=50.0,
+        metavar="MS",
+        help="임베딩 배치 벤치마크용 API 지연 시뮬레이션 (ms, 기본값: 50)",
+    )
 
 
 @pytest.fixture()
