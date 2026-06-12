@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from docpilot.search.highlight import render
 
 _pilot = None
 
@@ -90,9 +91,29 @@ mcp = FastMCP(
     instructions=(
         "docpilot는 데이터 폴더와 템플릿으로 HWPX / PDF / DOCX 문서를 자동 생성하고, "
         "인덱싱된 문서를 검색할 수 있습니다.\n"
-        "내장 템플릿: report(일반 보고서), gonmun(공문), minutes(회의록), proposal(제안서).\n"
-        "검색 워크플로: index()로 폴더를 인덱싱 → search()로 질의. "
-        "generate()는 내부적으로 인덱싱을 자동 수행합니다.\n"
+        "\n"
+        "## 문서 생성 워크플로 (generate)\n"
+        "generate()는 인덱싱을 직접 관리하지 않습니다. 반드시 아래 2단계로 호출하세요.\n"
+        "1단계: generate() 첫 호출 → 백그라운드 인덱싱 시작, '잠시 후 다시 호출하세요' 반환\n"
+        "2단계: 잠시 기다린 후 generate() 재호출 → 실제 문서 생성\n"
+        "인덱싱 오류 메시지가 반환되면 generate(reindex=True)로 재시도하세요.\n"
+        "\n"
+        "## 검색 워크플로 (search)\n"
+        "index()로 폴더를 인덱싱한 뒤 search()로 질의합니다.\n"
+        "\n"
+        "## 커버리지 분석 (analyze_coverage)\n"
+        "generate() 전에 analyze_coverage()로 데이터 폴더가 각 섹션을 얼마나 커버하는지 확인할 수 있습니다.\n"
+        "LOW 섹션은 LLM이 추론하여 작성하므로 generate() 후 반드시 검토하세요.\n"
+        "\n"
+        "## 내장 템플릿\n"
+        "report   — 일반 보고서: 보고서 제목, 작성일, 작성자/부서, "
+        "섹션1 제목, 섹션1 내용, 섹션2 제목, 섹션2 내용, 표 삽입 위치, 결론, 결론 내용\n"
+        "gonmun   — 공문: 기관명, 수신자, 경유, 제목, 본문1, 본문2, 표 또는 상세내용, "
+        "직위 성명, 시행번호, 시행일자, 우편번호, 주소, 홈페이지, 전화번호, 팩스번호, 이메일\n"
+        "minutes  — 회의록: 회의록 제목, 일시, 장소, 참석자 목록, 작성자, "
+        "안건 내용, 논의 내용, 결정 사항, 향후 조치 사항\n"
+        "proposal — 제안서: 사업 개요, 추진 배경, 추진 근거\n"
+        "\n"
         "사용 전 ANTHROPIC_API_KEY 환경 변수가 설정되어 있어야 합니다."
     ),
 )
@@ -201,7 +222,10 @@ def search(
             if job.thread.is_alive():
                 return "인덱싱이 진행 중입니다. 잠시 후 다시 search()를 호출하세요."
             if job.error:
-                return f"인덱싱 중 오류가 발생했습니다: {job.error}"
+                return (
+                    f"인덱싱 중 오류가 발생했습니다: {job.error}\n"
+                    "index(reindex=True)로 재시도하세요."
+                )
         else:
             running = [k for k, j in _index_jobs.items() if j.thread.is_alive()]
             if running:
@@ -214,7 +238,6 @@ def search(
         SearchFilter,
         group_by_document,
         highlight as highlight_fn,
-        render,
     )
     from docpilot.search import exact, morpheme
     from docpilot.search.embedding import EmbedFn
@@ -376,6 +399,20 @@ def generate(
     if output is None:
         output = _default_output(template)
 
+    # 내장 템플릿(.hwpx)인데 output이 .docx/.pdf이면 LLM 호출 전에 조기 차단
+    _BUILTIN_NAMES = {"report", "gonmun", "minutes", "proposal"}
+    _out_ext = Path(output).suffix.lower()
+    _tpl_is_builtin = str(template) in _BUILTIN_NAMES
+    _tpl_ext = Path(str(template)).suffix.lower() if not _tpl_is_builtin else ".hwpx"
+    if _tpl_ext != _out_ext and _out_ext in (".docx", ".pdf"):
+        expected = _tpl_ext if _tpl_ext in (".hwpx", ".docx", ".pdf") else ".hwpx"
+        return (
+            f"템플릿 형식({_tpl_ext or '.hwpx'})과 출력 형식({_out_ext})이 일치하지 않습니다.\n"
+            f"output 확장자를 {expected}로 변경하거나, "
+            f"출력 형식에 맞는 템플릿 파일을 직접 지정하세요.\n"
+            "내장 템플릿(report/gonmun/minutes/proposal)은 HWPX 전용입니다."
+        )
+
     folder_key = str(Path(data_folder).resolve())
     with _index_jobs_lock:
         job = _index_jobs.get(folder_key)
@@ -392,7 +429,10 @@ def generate(
         return "인덱싱이 진행 중입니다. 잠시 후 다시 generate()를 호출하세요."
 
     if job.error:
-        return f"인덱싱 중 오류 발생: {job.error}"
+        return (
+            f"인덱싱 중 오류 발생: {job.error}\n"
+            "generate(reindex=True)로 재시도하세요."
+        )
 
     # 인덱싱 완료 → 문서 생성 (bg 잡이 이미 인덱싱했으므로 reindex=False)
     result = _get_pilot().generate(
@@ -403,13 +443,20 @@ def generate(
         extra_instructions=extra_instructions,
         instructions_doc=instructions_doc,
     )
-    return (
+    msg = (
         f"문서 생성 완료: {result.path}\n"
         f"모델: {result.model} | "
         f"입력 {result.input_tokens:,} + 출력 {result.output_tokens:,} = "
         f"총 {result.total_tokens:,} 토큰 | "
         f"소요 {result.elapsed_seconds:.1f}초"
     )
+    if result.output_tokens > result.input_tokens:
+        msg += (
+            "\n[경고] 출력 토큰이 입력 토큰보다 많습니다. "
+            "데이터 폴더의 내용이 부족해 LLM이 내용을 추론하여 작성했을 수 있습니다. "
+            "문서 내용을 반드시 검토하세요."
+        )
+    return msg
 
 
 @mcp.tool()
@@ -452,6 +499,124 @@ def estimate_cost(
         template=template,
         quick=quick,
     )
+
+
+@mcp.tool()
+def analyze_coverage(
+    data_folder: str,
+    template: str,
+    top_k: int = 3,
+) -> str:
+    """템플릿 섹션별로 데이터 폴더의 커버리지를 분석합니다.
+
+    generate() 전에 호출하여 LLM이 데이터 기반으로 작성 가능한지,
+    추론이 필요한 섹션이 있는지 미리 파악할 수 있습니다.
+    index() 또는 generate() 첫 호출로 인덱싱이 완료된 후에 사용하세요.
+
+    Args:
+        data_folder: 분석할 데이터 파일이 있는 폴더 경로
+        template: 템플릿 파일 경로 또는 내장 템플릿 이름 (report/gonmun/minutes/proposal)
+        top_k: 섹션별 검색 결과 수 — 등급 기준값 (기본값: 3)
+    """
+    _BUILTIN_NAMES = {"report", "gonmun", "minutes", "proposal"}
+
+    # 1. 템플릿 섹션 추출
+    if str(template) in _BUILTIN_NAMES:
+        from docpilot import _assemble_builtin_hwpx, _extract_placeholders
+        tpl_path = _assemble_builtin_hwpx(str(template))
+        sections = _extract_placeholders(tpl_path)
+    else:
+        tpl_path = Path(template)
+        if not tpl_path.exists():
+            return f"템플릿 파일을 찾을 수 없습니다: {template}"
+        from docpilot import _extract_placeholders
+        sections = _extract_placeholders(tpl_path)
+
+    if not sections:
+        return (
+            f"템플릿에서 섹션({{{{...}}}})을 추출할 수 없습니다: {template}\n"
+            "플레이스홀더가 없는 Reference Mode 템플릿은 analyze_coverage를 지원하지 않습니다."
+        )
+
+    # 2. 인덱싱 상태 확인
+    folder_key = str(Path(data_folder).resolve())
+    with _index_jobs_lock:
+        job = _index_jobs.get(folder_key)
+
+    if job is not None and job.thread.is_alive():
+        return "인덱싱 진행 중입니다. 완료 후 다시 analyze_coverage()를 호출하세요."
+    if job is not None and job.error:
+        return f"인덱싱 오류: {job.error}\nindex(reindex=True)로 재시도하세요."
+
+    from docpilot.db import client as db_client
+    from docpilot.db.schema import Document
+    with db_client.session() as db:
+        doc_count = db.query(Document).count()
+    if doc_count == 0:
+        return (
+            "인덱싱된 문서가 없습니다.\n"
+            "먼저 index() 또는 generate()로 데이터 폴더를 인덱싱하세요."
+        )
+
+    # 3. 섹션별 검색
+    pilot = _get_pilot()
+    from docpilot.search import exact as exact_search
+
+    section_scores: list[tuple[str, int, float]] = []
+    for section_name in sections:
+        try:
+            from docpilot.search.hybrid import hybrid as hybrid_fn
+            results = hybrid_fn(
+                section_name,
+                embed_fn=pilot._embed_fn,
+                top_k=top_k,
+                or_fallback=True,
+            )
+        except Exception:
+            results = exact_search.search(section_name, top_k=top_k)
+
+        count = len(results)
+        top_score = results[0].score if results else 0.0
+        section_scores.append((section_name, count, top_score))
+
+    # 4. 등급 산정 및 리포트 생성
+    def _grade(count: int) -> str:
+        if count >= top_k:
+            return "HIGH"
+        if count >= 1:
+            return "MED"
+        return "LOW"
+
+    graded = [(name, _grade(cnt), cnt, score) for name, cnt, score in section_scores]
+    high = [g for g in graded if g[1] == "HIGH"]
+    med  = [g for g in graded if g[1] == "MED"]
+    low  = [g for g in graded if g[1] == "LOW"]
+
+    tpl_label = str(template) if str(template) in _BUILTIN_NAMES else Path(template).name
+    lines = [
+        "데이터 커버리지 분석",
+        f"  데이터 폴더: {data_folder}",
+        f"  템플릿:     {tpl_label}  (인덱싱 문서 {doc_count}개)",
+        f"  총 {len(sections)}개 섹션 — HIGH {len(high)} | MED {len(med)} | LOW {len(low)}",
+        "",
+        "섹션별 커버리지",
+        "─" * 50,
+    ]
+    for name, grade, count, score in graded:
+        chunk_str = f"{count}청크" if count > 0 else "0청크"
+        score_str = f"  score {score:.4f}" if count > 0 else ""
+        lines.append(f"[{grade:4s}] {name:<22s}  {chunk_str}{score_str}")
+
+    lines.append("")
+    if not low:
+        lines.append("[권고] 모든 섹션에 관련 데이터가 있습니다. generate()를 실행하세요.")
+    else:
+        lines.append(f"[권고] LOW 섹션 {len(low)}개 — LLM이 내용을 추론할 가능성이 높습니다.")
+        lines.append(f"  LOW 섹션: {', '.join(g[0] for g in low)}")
+        lines.append("  · 해당 내용이 포함된 파일을 데이터 폴더에 추가하거나")
+        lines.append("  · LLM이 추론 작성하도록 허용하고 generate() 후 문서를 직접 검토하세요.")
+
+    return "\n".join(lines)
 
 
 def main() -> None:

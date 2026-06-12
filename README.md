@@ -252,6 +252,30 @@ LLM이 생성한 내용에 `\n`이 포함되면 해당 위치에 단락이 자�
 
 템플릿을 직접 만들 때는 플레이스홀더를 실제 내용이 들어갈 위치에 삽입하면 해당 위치의 스타일이 자동으로 추출됩니다. `generate_template()`으로 자동 생성한 템플릿도 샘플 문서의 본문 스타일을 복제하므로 동일하게 적용됩니다.
 
+### 플레이스홀더 없는 파일을 양식으로 사용하기 (Reference Mode)
+
+`{{섹션명}}`이 없는 일반 문서 파일도 `template`에 그대로 넘길 수 있습니다. docpilot이 파일 내용을 읽어 LLM으로 섹션 구조를 자동 추론하고, 해당 구조로 문서를 생성합니다.
+
+```python
+# 플레이스홀더 없는 기존 문서를 양식 참조로 사용
+pilot.generate(
+    data_folder="./data",
+    template="./reference/existing_report.hwpx",  # {{}} 없어도 OK
+    output="./output/new_report.hwpx",
+)
+```
+
+입력 파일 형식에 따라 동작이 다릅니다:
+
+| 템플릿 형식 | 섹션 추론 | 출력 양식 베이스 |
+|-------------|-----------|----------------|
+| `.hwpx` | LLM이 문서 구조 분석 | 원본 .hwpx 구조·스타일 유지 |
+| `.docx` | LLM이 문서 구조 분석 | 원본 .docx 구조·스타일 유지 |
+| `.pdf` | LLM이 텍스트 추출 후 분석 | 내장 `report` 템플릿 기반 .hwpx 출력 |
+| `.pptx` · `.txt` · `.md` 등 | LLM이 텍스트 추출 후 분석 | 내장 `report` 템플릿 기반 .hwpx 출력 |
+
+> **참고** PDF·텍스트 형식은 원본 서식 구조를 재현할 수 없어 내장 보고서 양식을 베이스로 사용합니다. 원본 서식을 살리려면 `.hwpx` 또는 `.docx` 파일을 사용하세요.
+
 ## 작성 지침 문서 (RFP·제안요청서)
 
 제안요청서나 작성 요령이 담긴 파일을 `instructions_doc`으로 넘기면, LLM이 해당 파일 전체를 읽어 지침으로 활용합니다. `data` 폴더의 RAG 검색과 달리 파일 내용이 **온전히** 프롬프트에 포함됩니다.
@@ -822,6 +846,7 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 | `generate` | 데이터 폴더 + 템플릿 → 문서 생성 (output 미지정 시 `~/Documents/docpilot_YYYYMMDD_HHMMSS.hwpx`) |
 | `generate_template` | 샘플 HWPX → 재사용 가능한 템플릿 생성 |
 | `estimate_cost` | 생성 전 API 토큰 비용 추정 |
+| `analyze_coverage` | 섹션별 데이터 커버리지 분석 — LOW 섹션은 LLM이 추론 작성할 가능성이 높음 |
 
 Claude 앱에서 자연어로 사용합니다.
 
@@ -851,6 +876,9 @@ reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아�
 # 템플릿 자동 생성
 /Users/me/samples 폴더의 hwpx 파일들로 템플릿 만들어서
 /Users/me/templates/my_report.hwpx 로 저장해줘.
+
+# 데이터 커버리지 확인 (generate 전 권장)
+/Users/me/data 폴더가 report 템플릿 섹션을 얼마나 커버하는지 분석해줘.
 ```
 
 #### search 도구 파라미터
@@ -868,6 +896,36 @@ reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아�
 | `metadata` | object | null | 문서 메타데이터 key-value 필터 |
 | `created_after` | string | null | 인덱싱 날짜 하한 (ISO 8601) |
 | `created_before` | string | null | 인덱싱 날짜 상한 (ISO 8601) |
+
+#### analyze_coverage 도구 파라미터
+
+섹션별 데이터 커버리지를 분석해 `generate()` 전에 LLM 추론 가능성을 미리 파악합니다.
+인덱싱 완료 후 호출하세요 (`index()` 또는 `generate()` 첫 호출 후).
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|----------|------|--------|------|
+| `data_folder` | string | — | 분석할 데이터 파일이 있는 폴더 경로 |
+| `template` | string | — | 템플릿 파일 경로 또는 내장 템플릿 이름 |
+| `top_k` | int | 3 | 섹션별 검색 결과 수 — 등급 기준값 (≥top_k → HIGH, 1~top_k-1 → MED, 0 → LOW) |
+
+결과 예시:
+```
+데이터 커버리지 분석
+  데이터 폴더: /Users/me/data
+  템플릿:     report  (인덱싱 문서 3개)
+  총 10개 섹션 — HIGH 6 | MED 2 | LOW 2
+
+섹션별 커버리지
+──────────────────────────────────────────────────
+[HIGH] 보고서 제목                3청크  score 0.0312
+[MED ] 결론                      1청크  score 0.0165
+[LOW ] 표 삽입 위치              0청크
+
+[권고] LOW 섹션 2개 — LLM이 내용을 추론할 가능성이 높습니다.
+  LOW 섹션: 표 삽입 위치, 작성일
+  · 해당 내용이 포함된 파일을 데이터 폴더에 추가하거나
+  · LLM이 추론 작성하도록 허용하고 generate() 후 문서를 직접 검토하세요.
+```
 
 ### 환경변수
 

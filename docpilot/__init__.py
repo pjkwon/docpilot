@@ -430,7 +430,16 @@ class DocPilot:
                 )
 
         from docpilot.db import indexer
-        indexer.index_folder(data_folder, embed_fn=self._embed_fn, force=reindex)
+        doc_ids = indexer.index_folder(data_folder, embed_fn=self._embed_fn, force=reindex)
+        if not doc_ids:
+            raise DocPilotError(
+                "데이터 폴더에서 인덱싱된 문서가 없습니다.",
+                detail=(
+                    f"{data_folder} 에서 지원하는 파일을 찾지 못했거나 "
+                    "모든 파일의 수집(ingestion)에 실패했습니다. "
+                    "지원 형식: .txt .md .csv .hwpx .docx .pdf .pptx .jpg .png 등"
+                ),
+            )
 
         from docpilot.mapping.base import TemplateSection
         placeholder_names = _extract_placeholders(template_path)
