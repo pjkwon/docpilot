@@ -110,6 +110,7 @@ def index(data_folder: str, reindex: bool = False) -> str:
 @mcp.tool()
 def search(
     query: str,
+    data_folder: str | None = None,
     mode: str = "morpheme",
     top_k: int = 10,
     group_by_doc: bool = False,
@@ -122,8 +123,13 @@ def search(
 ) -> str:
     """인덱싱된 문서를 검색합니다. 검색 전 index()로 폴더를 먼저 인덱싱해야 합니다.
 
+    index()가 백그라운드에서 실행 중이면 완료를 기다리도록 안내합니다.
+    data_folder를 지정하면 해당 폴더의 인덱싱 완료 여부만 확인하고,
+    지정하지 않으면 진행 중인 인덱싱 잡이 있는지 전체를 확인합니다.
+
     Args:
         query: 검색 질의 문자열
+        data_folder: index()에 사용한 폴더 경로 (인덱싱 완료 확인용, 선택)
         mode: 검색 방식 — "exact"(키워드 LIKE), "morpheme"(형태소 BM25, 기본값),
               "vector"(벡터 유사도, embed_fn 구성 필요)
         top_k: 반환할 최대 결과 수 (기본값: 10)
@@ -135,6 +141,26 @@ def search(
         created_after: 인덱싱 날짜 하한 — ISO 8601 형식 (예: "2026-01-01")
         created_before: 인덱싱 날짜 상한 — ISO 8601 형식 (예: "2026-12-31")
     """
+    # 인덱싱 완료 여부 확인
+    with _index_jobs_lock:
+        if data_folder:
+            folder_key = str(Path(data_folder).resolve())
+            job = _index_jobs.get(folder_key)
+            if job is None:
+                return (
+                    f"'{data_folder}' 폴더가 아직 인덱싱되지 않았습니다. "
+                    "먼저 index()를 호출하세요."
+                )
+            if job.thread.is_alive():
+                return "인덱싱이 진행 중입니다. 잠시 후 다시 search()를 호출하세요."
+            if job.error:
+                return f"인덱싱 중 오류가 발생했습니다: {job.error}"
+        else:
+            running = [k for k, j in _index_jobs.items() if j.thread.is_alive()]
+            if running:
+                folders = ", ".join(Path(k).name for k in running)
+                return f"인덱싱이 진행 중입니다 ({folders}). 잠시 후 다시 search()를 호출하세요."
+
     from datetime import datetime
 
     from docpilot.search import (
