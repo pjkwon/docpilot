@@ -753,12 +753,15 @@ pip install "docpilot[mcp] @ git+https://github.com/pjkwon/docpilot.git" //GitHu
       "command": "docpilot-mcp",
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-...",
-        "DOCPILOT_DATABASE_URL": "sqlite:////Users/yourname/docpilot.db"
+        "DOCPILOT_DATABASE_URL": "sqlite:////Users/yourname/docpilot.db",
+        "DOCPILOT_EMBED": "bge"
       }
     }
   }
 }
 ```
+
+`DOCPILOT_EMBED` 미지정 시 `multilingual-e5-base`(기본값)가 사용됩니다. BGE-M3 등 다른 모델을 원할 때만 지정합니다.
 
 > **경로는 모두 절대 경로로 지정하세요.** Claude Desktop이 MCP 서버를 실행하는 작업 디렉터리는 사용자 프로젝트 폴더가 아닙니다. `DOCPILOT_DATABASE_URL` 미지정 시 기본값은 `~/docpilot.db`(홈 디렉터리)입니다. `generate` 도구의 `data_folder`, `output`, 커스텀 템플릿 경로도 절대 경로로 전달해야 합니다.
 
@@ -834,6 +837,20 @@ reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아�
 | `DOCPILOT_LLM` | `claude` | LLM 제공자 (`claude` / `openai` / `gemini` / `grok` / `ollama`) |
 | `DOCPILOT_MODEL` | 제공자 기본 | 특정 모델 지정 (예: `claude-opus-4-8`) |
 | `DOCPILOT_DATABASE_URL` | `~/docpilot.db` | DB 연결 문자열 (절대 경로 권장) |
+| `DOCPILOT_EMBED` | (자동) | 임베딩 모델 선택. 미설정 시 `multilingual-e5-base` 자동 사용 |
+
+**`DOCPILOT_EMBED` 값 형식:**
+
+| 값 | 모델 | 필요 패키지 | 비고 |
+|----|------|------------|------|
+| (미설정) | `intfloat/multilingual-e5-base` | `[vec]` | 기본값, 768차원 |
+| `bge` | `BAAI/bge-m3` | `[bge]` | 최고 품질, 1024차원 |
+| `bge:cuda` | `BAAI/bge-m3` (GPU) | `[bge]` | GPU 가속 |
+| `openai` | `text-embedding-3-small` | `[openai]` | `OPENAI_API_KEY` 필요 |
+| `openai:text-embedding-3-large` | text-embedding-3-large | `[openai]` | |
+| `voyage` | `voyage-3` | `[voyage]` | `VOYAGE_API_KEY` 필요 |
+| `sentence` | `intfloat/multilingual-e5-base` | `[sentence]` | |
+| `sentence:intfloat/multilingual-e5-large` | multilingual-e5-large | `[sentence]` | 더 높은 품질 |
 
 ## 비용 추정
 

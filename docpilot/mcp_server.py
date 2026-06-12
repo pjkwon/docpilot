@@ -25,6 +25,52 @@ _index_jobs: dict[str, _IndexJob] = {}
 _index_jobs_lock = threading.Lock()
 
 
+def _resolve_embed_fn():
+    """
+    DOCPILOT_EMBED 환경변수에 따라 embed_fn을 반환합니다.
+
+    값 형식:
+      (미설정)            → default_embed_fn() — multilingual-e5-base 자동
+      bge                 → bge_embed_fn()
+      bge:cuda            → bge_embed_fn(device="cuda")
+      openai              → openai_embed_fn()  (OPENAI_API_KEY 필요)
+      openai:text-embedding-3-large → openai_embed_fn(model=...)
+      voyage              → voyage_embed_fn()  (VOYAGE_API_KEY 필요)
+      voyage:voyage-3-lite → voyage_embed_fn(model=...)
+      sentence            → sentence_embed_fn()
+      sentence:intfloat/multilingual-e5-large → sentence_embed_fn(model=...)
+    """
+    raw = os.environ.get("DOCPILOT_EMBED", "").strip()
+    if not raw:
+        return None  # DocPilot.__init__ will call default_embed_fn()
+
+    from docpilot.search.embedding import (
+        bge_embed_fn, openai_embed_fn, voyage_embed_fn, sentence_embed_fn,
+    )
+
+    provider, _, option = raw.partition(":")
+    provider = provider.lower()
+
+    match provider:
+        case "bge":
+            return bge_embed_fn(device=option or "cpu")
+        case "openai":
+            return openai_embed_fn(model=option) if option else openai_embed_fn()
+        case "voyage":
+            return voyage_embed_fn(model=option) if option else voyage_embed_fn()
+        case "sentence":
+            return sentence_embed_fn(model=option) if option else sentence_embed_fn()
+        case _:
+            import warnings
+            warnings.warn(
+                f"DOCPILOT_EMBED={raw!r} 값을 인식할 수 없습니다. "
+                "기본 임베딩 모델을 사용합니다. "
+                "유효한 값: bge, openai, voyage, sentence (콜론으로 옵션 구분 가능)",
+                stacklevel=2,
+            )
+            return None
+
+
 def _get_pilot():
     global _pilot
     if _pilot is None:
@@ -34,6 +80,7 @@ def _get_pilot():
             api_key=os.environ.get("ANTHROPIC_API_KEY"),
             model=os.environ.get("DOCPILOT_MODEL") or None,
             database_url=os.environ.get("DOCPILOT_DATABASE_URL") or None,
+            embed_fn=_resolve_embed_fn(),
         )
     return _pilot
 
