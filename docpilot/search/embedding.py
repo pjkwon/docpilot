@@ -206,6 +206,42 @@ def bge_embed_fn(
     return _embed
 
 
+_DEFAULT_MODEL = "intfloat/multilingual-e5-base"
+
+
+def default_embed_fn() -> "EmbedFn | None":
+    """
+    Returns the built-in default embedding function (768-dim, sentence-transformers).
+
+    Uses ``intfloat/multilingual-e5-base`` — a retrieval-optimised multilingual model
+    with solid Korean support. Downloaded from HuggingFace on first embed call and
+    cached locally (~560 MB). Subsequent calls reuse the cached model.
+
+    Returns ``None`` when sentence-transformers is not installed — callers should
+    treat ``None`` as "no vector search available" and fall back to BM25.
+
+    Install: ``pip install "docpilot[vec]"``
+    """
+    try:
+        from sentence_transformers import SentenceTransformer  # noqa: F401
+    except ImportError:
+        return None
+
+    _state: list = []  # lazy model holder — loaded on first call, not at factory time
+
+    def _embed(text):
+        if not _state:
+            _state.append(SentenceTransformer(_DEFAULT_MODEL, device="cpu"))
+        model = _state[0]
+        batch = isinstance(text, list)
+        result = model.encode(text)
+        if batch:
+            return [v.tolist() for v in result]
+        return result.tolist()
+
+    return _embed
+
+
 def sentence_embed_fn(
     model: str = "paraphrase-multilingual-MiniLM-L12-v2",
     device: str = "cpu",

@@ -8,8 +8,8 @@
 - **구조화 인제스트** — HWPX·DOCX 스타일 기반 헤딩, PPTX 불릿 계층, PDF 폰트 크기 기반 헤딩 감지, 의미 경계 청킹으로 RAG 검색 품질 향상
 - **다양한 출력 포맷** — HWPX, DOCX, PDF
 - **LLM 교체 가능** — Claude · OpenAI · Gemini · Grok · Ollama, 동일 인터페이스
-- **하이브리드 검색 (RRF)** — 형태소 AND(FTS5·BM25) + 벡터(sqlite-vec/pgvector)를 동시 실행 후 Reciprocal Rank Fusion으로 병합. embed_fn 없으면 형태소 AND → OR 폴백
-- **임베딩 제공자 선택** — OpenAI · Voyage AI · BGE(로컬) · sentence-transformers(로컬), 동일 인터페이스
+- **하이브리드 검색 (RRF)** — 형태소 AND(FTS5·BM25) + 벡터(sqlite-vec/pgvector)를 동시 실행 후 Reciprocal Rank Fusion으로 병합. 별도 설정 없이 `multilingual-e5-base` 로컬 모델 기본 내장
+- **임베딩 제공자 선택** — 기본(multilingual-e5-base 로컬) · OpenAI · Voyage AI · BGE-M3(로컬) · sentence-transformers(로컬), 동일 인터페이스
 - **스타일 인식 생성 (HWPX·DOCX)** — 플레이스홀더 위치의 폰트 크기·정렬·표 셀 너비를 자동 분석해 LLM에 전달, 서식에 어울리는 내용 생성
 - **템플릿 자동 생성 (HWPX·DOCX)** — 샘플 문서에서 공통 섹션 구조 추출 (샘플 스타일 자동 상속)
 - **LLM 벤치마크** — 여러 LLM의 매핑 결과를 나란히 비교
@@ -446,8 +446,6 @@ pilot.generate_template(samples=[...], output="./templates/my_report.docx", use_
 
 `DocPilot.generate()` 내부의 `RagMapper`는 다음 순서로 검색합니다.
 
-**embed_fn 있을 때 (권장)**
-
 ```
 형태소 AND (FTS5·BM25)  ─┐
                           ├─ Reciprocal Rank Fusion → top_k 반환
@@ -458,39 +456,38 @@ pilot.generate_template(samples=[...], output="./templates/my_report.docx", use_
 
 형태소 exact match로 찾은 청크와 의미적으로 유사한 청크(유의어 포함)를 함께 포착해 순위를 병합합니다.
 
-**embed_fn 없을 때**
-
-```
-형태소 AND → 결과 없으면 형태소 OR
-```
+`pip install "docpilot[vec]"` 설치 시 `multilingual-e5-base` 로컬 모델이 자동으로 사용됩니다. 벡터 기능 없이 설치하면 형태소 AND → OR 폴백으로 동작합니다.
 
 ### 개별 검색 API
 
 #### DocPilot.search() — 통합 인터페이스
 
-인덱싱 후 `pilot.search()`로 검색할 수 있습니다. 기본 모드는 하이브리드(BM25 + Vector RRF)입니다.
+인덱싱 후 `pilot.search()`로 검색할 수 있습니다. `pip install "docpilot[vec]"` 환경에서는 별도 설정 없이 하이브리드 검색이 동작합니다.
 
 ```python
-pilot = DocPilot(embed_fn=bge_embed_fn())
+# 기본: embed_fn 지정 불필요 — multilingual-e5-base 자동 사용
+pilot = DocPilot()
 pilot.index("./data")
-
-# 기본: 하이브리드 검색 (BM25 + 벡터 RRF)
-results = pilot.search("사업 계획", top_k=10)
+results = pilot.search("사업 계획", top_k=10)  # BM25 + Vector RRF
 
 # 모드 선택
 results = pilot.search("사업 계획", mode="bm25")    # 형태소 BM25만
 results = pilot.search("사업 계획", mode="vector")  # 벡터만
 results = pilot.search("사업 계획", mode="exact")   # ILIKE 키워드만
+
+# 다른 임베딩 모델 사용 시
+from docpilot.search.embedding import bge_embed_fn
+pilot = DocPilot(embed_fn=bge_embed_fn())  # BGE-M3 (최고 품질, 2GB)
 ```
 
 #### 저수준 API
 
 ```python
 from docpilot.search import exact, embedding, morpheme, hybrid
+from docpilot.search.embedding import default_embed_fn
 
-# 하이브리드 — BM25 + Vector → RRF 병합 (embed_fn 없으면 BM25만)
-from docpilot.search.embedding import bge_embed_fn
-results = hybrid("사업 계획", embed_fn=bge_embed_fn(), top_k=10)
+# 하이브리드 — BM25 + Vector → RRF 병합
+results = hybrid("사업 계획", embed_fn=default_embed_fn(), top_k=10)
 
 # 형태소 기반 검색 — pip install "docpilot[morpheme]"
 # SQLite: FTS5 역인덱스 + BM25 랭킹 / PostgreSQL: Jaccard 유사도
@@ -580,6 +577,8 @@ for doc in docs:
 docpilot은 벡터 검색(RAG)에 사용할 임베딩 제공자를 자유롭게 선택할 수 있습니다.  
 `DocPilot(embed_fn=...)` 또는 `embedding.search(embed_fn=...)`에 팩토리 함수를 전달합니다.
 
+`pip install "docpilot[vec]"` 설치 시 `DocPilot()`은 별도 설정 없이 `multilingual-e5-base` 로컬 모델을 기본으로 사용합니다.
+
 ### API 방식 (외부 서비스 호출)
 
 | 제공자 | 팩토리 함수 | 기본 모델 | 필요 패키지 | 환경변수 |
@@ -603,21 +602,26 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 ### 로컬 방식 (API 키 불필요, 모델 자동 다운로드)
 
-| 제공자 | 팩토리 함수 | 기본 모델 | 필요 패키지 |
-|--------|------------|-----------|------------|
-| BGE (BAAI) | `bge_embed_fn()` | `BAAI/bge-m3` | `[bge]` |
-| sentence-transformers | `sentence_embed_fn()` | `paraphrase-multilingual-MiniLM-L12-v2` | `[sentence]` |
+| 제공자 | 팩토리 함수 | 기본 모델 | 크기 | 필요 패키지 | 비고 |
+|--------|------------|-----------|------|------------|------|
+| 기본 내장 | `default_embed_fn()` | `intfloat/multilingual-e5-base` | ~560MB | `[vec]` | zero-config, 768차원 |
+| BGE (BAAI) | `bge_embed_fn()` | `BAAI/bge-m3` | ~2GB | `[bge]` | 최고 품질, 1024차원 |
+| sentence-transformers | `sentence_embed_fn()` | `intfloat/multilingual-e5-base` | ~560MB | `[sentence]` | 모델 지정 가능 |
 
 ```python
-from docpilot.search.embedding import bge_embed_fn, sentence_embed_fn
+from docpilot.search.embedding import default_embed_fn, bge_embed_fn, sentence_embed_fn
+
+# 기본 — pip install "docpilot[vec]" / 설정 불필요
+# DocPilot()은 자동으로 이 함수를 사용 (명시적으로 전달할 필요 없음)
+embed_fn = default_embed_fn()                                   # multilingual-e5-base, 768차원, ~560MB
 
 # BGE — pip install "docpilot[bge]" / 한국어 포함 다국어 최상위권
-embed_fn = bge_embed_fn()                                       # CPU, BAAI/bge-m3
+embed_fn = bge_embed_fn()                                       # CPU, BAAI/bge-m3, 1024차원
 embed_fn = bge_embed_fn(device="cuda", use_fp16=True)          # GPU 가속
 
-# sentence-transformers — pip install "docpilot[sentence]" / 경량 다국어
-embed_fn = sentence_embed_fn()                                  # 384차원, ~90MB (기본값은 bge_embed_fn 권장)
-embed_fn = sentence_embed_fn(model="multilingual-e5-large", device="cuda")
+# sentence-transformers — pip install "docpilot[sentence]" / 모델 직접 지정
+embed_fn = sentence_embed_fn("intfloat/multilingual-e5-large") # 더 높은 품질
+embed_fn = sentence_embed_fn("intfloat/multilingual-e5-small") # 더 가벼운 옵션
 
 pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 ```

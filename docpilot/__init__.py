@@ -335,6 +335,9 @@ class DocPilot:
     ) -> None:
         self._llm = llm or os.environ.get("DOCPILOT_LLM", "claude")
         self._api_key = api_key
+        if embed_fn is None:
+            from docpilot.search.embedding import default_embed_fn
+            embed_fn = default_embed_fn()  # None when sentence-transformers not installed
         self._embed_fn = embed_fn
         base_mapper = self._build_mapper(self._llm, api_key, model, base_url)
 

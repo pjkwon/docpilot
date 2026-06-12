@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-EMBEDDING_DIM = 1024
+EMBEDDING_DIM = 768  # intfloat/multilingual-e5-base (default); change if using a different model
 
 
 class Base(DeclarativeBase):
@@ -66,7 +66,7 @@ class Chunk(Base):
 
     # Embeddings are stored separately:
     # - SQLite: vec_chunks virtual table (sqlite-vec)
-    # - PostgreSQL: embedding vector(1536) column (pgvector, added via DDL)
+    # - PostgreSQL: embedding vector(768) column (pgvector, added via DDL)
 
 
 class TemplateRecord(Base):
