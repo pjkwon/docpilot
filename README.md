@@ -605,16 +605,25 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 ### 커스텀 임베딩
 
-`Callable[[str], list[float]]` 인터페이스를 맞추면 어떤 임베딩 모델이든 연결할 수 있습니다.
+`Callable[[str], list[float]]` 인터페이스를 맞추면 어떤 임베딩 모델이든 연결할 수 있습니다.  
+인덱싱 성능을 높이려면 리스트 입력도 지원하도록 구현하세요 — docpilot이 자동으로 배치 호출합니다.
 
 ```python
-# 예시: 직접 구현한 임베딩 함수
+# 기본: 단일 텍스트만 처리 (인덱싱 시 청크 수만큼 반복 호출)
 def my_embed_fn(text: str) -> list[float]:
     ...
-    return vector  # list[float]
+    return vector
+
+# 권장: 배치도 지원 (인덱싱 시 전체 청크를 한 번에 처리)
+def my_embed_fn(text: str | list[str]) -> list[float] | list[list[float]]:
+    inputs = text if isinstance(text, list) else [text]
+    vectors = ...  # 배치 임베딩
+    return vectors if isinstance(text, list) else vectors[0]
 
 pilot = DocPilot(llm="claude", embed_fn=my_embed_fn)
 ```
+
+> **배치 처리**: 기본 제공 팩토리 함수(`openai_embed_fn`, `voyage_embed_fn`, `bge_embed_fn`, `sentence_embed_fn`)는 모두 배치 호출을 지원합니다. 문서 인덱싱 시 전체 청크를 API 1회 호출로 처리하므로, 단일 호출 방식 대비 청크 수에 비례해 속도가 향상됩니다.
 
 ## 데이터베이스 설정
 

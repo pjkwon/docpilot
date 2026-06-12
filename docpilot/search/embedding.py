@@ -122,7 +122,7 @@ def openai_embed_fn(
     api_key: str | None = None,
     model: str = "text-embedding-3-small",
 ) -> EmbedFn:
-    """Factory that returns an OpenAI embedding function."""
+    """Factory that returns an OpenAI embedding function (single str or list[str])."""
     import os
 
     key = api_key or os.environ.get("OPENAI_API_KEY")
@@ -132,15 +132,19 @@ def openai_embed_fn(
             detail="Pass api_key or set OPENAI_API_KEY env var",
         )
 
-    def _embed(text: str) -> list[float]:
-        try:
-            from openai import OpenAI
-        except ImportError as e:
-            raise SearchError("openai SDK required: pip install openai") from e
+    try:
+        from openai import OpenAI
+    except ImportError as e:
+        raise SearchError("openai SDK required: pip install openai") from e
 
-        c = OpenAI(api_key=key)
-        response = c.embeddings.create(input=text, model=model)
-        return response.data[0].embedding
+    _client = OpenAI(api_key=key)
+
+    def _embed(text):
+        batch = isinstance(text, list)
+        inputs = text if batch else [text]
+        response = _client.embeddings.create(input=inputs, model=model)
+        vecs = [r.embedding for r in response.data]
+        return vecs if batch else vecs[0]
 
     return _embed
 
@@ -149,7 +153,7 @@ def voyage_embed_fn(
     api_key: str | None = None,
     model: str = "voyage-3",
 ) -> EmbedFn:
-    """Factory that returns a Voyage AI embedding function."""
+    """Factory that returns a Voyage AI embedding function (single str or list[str])."""
     import os
 
     key = api_key or os.environ.get("VOYAGE_API_KEY")
@@ -159,15 +163,18 @@ def voyage_embed_fn(
             detail="Pass api_key or set VOYAGE_API_KEY env var",
         )
 
-    def _embed(text: str) -> list[float]:
-        try:
-            import voyageai
-        except ImportError as e:
-            raise SearchError("voyageai SDK required: pip install voyageai") from e
+    try:
+        import voyageai
+    except ImportError as e:
+        raise SearchError("voyageai SDK required: pip install voyageai") from e
 
-        client = voyageai.Client(api_key=key)
-        result = client.embed([text], model=model)
-        return result.embeddings[0]
+    _client = voyageai.Client(api_key=key)
+
+    def _embed(text):
+        batch = isinstance(text, list)
+        inputs = text if batch else [text]
+        result = _client.embed(inputs, model=model)
+        return result.embeddings if batch else result.embeddings[0]
 
     return _embed
 
@@ -180,6 +187,7 @@ def bge_embed_fn(
     """
     Factory that returns a local BGE embedding function via FlagEmbedding.
     Model is downloaded from HuggingFace on first use and cached locally.
+    Accepts a single str or list[str] for batch encoding.
     """
     try:
         from FlagEmbedding import BGEM3FlagModel
@@ -188,9 +196,12 @@ def bge_embed_fn(
 
     _model = BGEM3FlagModel(model, use_fp16=use_fp16, device=device)
 
-    def _embed(text: str) -> list[float]:
-        result = _model.encode([text])
-        return result["dense_vecs"][0].tolist()
+    def _embed(text):
+        batch = isinstance(text, list)
+        inputs = text if batch else [text]
+        result = _model.encode(inputs)
+        vecs = [v.tolist() for v in result["dense_vecs"]]
+        return vecs if batch else vecs[0]
 
     return _embed
 
@@ -202,6 +213,7 @@ def sentence_embed_fn(
     """
     Factory that returns a local sentence-transformers embedding function.
     Model is downloaded from HuggingFace on first use and cached locally.
+    Accepts a single str or list[str] for batch encoding.
     """
     try:
         from sentence_transformers import SentenceTransformer
@@ -210,7 +222,11 @@ def sentence_embed_fn(
 
     _model = SentenceTransformer(model, device=device)
 
-    def _embed(text: str) -> list[float]:
-        return _model.encode(text).tolist()
+    def _embed(text):
+        batch = isinstance(text, list)
+        result = _model.encode(text)
+        if batch:
+            return [v.tolist() for v in result]
+        return result.tolist()
 
     return _embed

@@ -61,6 +61,7 @@ def index(
         db.flush()  # get db_doc.id before adding chunks
 
         chunks = _split(doc.content, chunk_size, overlap, min_chunk_size)
+        db_chunks: list[Chunk] = []
         for i, chunk_text in enumerate(chunks):
             chunk = Chunk(
                 document_id=db_doc.id,
@@ -68,11 +69,17 @@ def index(
                 content=chunk_text,
             )
             db.add(chunk)
-            db.flush()
+            db_chunks.append(chunk)
 
-            _set_morphemes(db, chunk.id, chunk_text)
-            if embed_fn:
-                _set_embedding(db, chunk.id, embed_fn(chunk_text))
+        db.flush()  # single flush — all chunks get IDs at once
+
+        for chunk in db_chunks:
+            _set_morphemes(db, chunk.id, chunk.content)
+
+        if embed_fn and db_chunks:
+            vectors = _batch_embed(embed_fn, [c.content for c in db_chunks])
+            for chunk, vec in zip(db_chunks, vectors):
+                _set_embedding(db, chunk.id, vec)
 
         return db_doc.id
 
@@ -253,6 +260,19 @@ def _set_morphemes(db: Any, chunk_id: int, chunk_text: str) -> None:
         text("INSERT INTO fts_chunks(rowid, morphemes) VALUES (:id, :morphemes)"),
         {"id": chunk_id, "morphemes": morphemes},
     )
+
+
+def _batch_embed(fn: EmbedFn, texts: list[str]) -> list[list[float]]:
+    """Call embed_fn with a list of texts. Falls back to per-text loop for non-batch functions."""
+    if not texts:
+        return []
+    try:
+        result = fn(texts)  # type: ignore[arg-type]
+        if result and hasattr(result[0], "__iter__") and not isinstance(result[0], (str, float)):
+            return [list(v) for v in result]
+    except TypeError:
+        pass
+    return [fn(t) for t in texts]
 
 
 def _set_embedding(db: Any, chunk_id: int, vector: list[float]) -> None:
