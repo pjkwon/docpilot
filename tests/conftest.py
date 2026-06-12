@@ -104,9 +104,9 @@ requires_llm = pytest.mark.skipif(
 
 @pytest.fixture(scope="session")
 def embed_fn():
-    """sentence-transformers 임베딩 함수. 세션 전체에서 모델을 한 번만 로드."""
-    from docpilot.search.embedding import sentence_embed_fn
-    return sentence_embed_fn()
+    """BGE-M3 임베딩 함수 (1024차원, EMBEDDING_DIM과 일치). 세션 전체에서 모델을 한 번만 로드."""
+    from docpilot.search.embedding import bge_embed_fn
+    return bge_embed_fn()
 
 
 @pytest.fixture()

@@ -1,5 +1,5 @@
 """
-sentence-transformers 임베딩 통합 테스트.
+BGE-M3 임베딩 통합 테스트.
 
 기존 test_search.py::TestEmbeddingSearch 는 mock 기반으로 인터페이스만 검증함.
 이 파일은 실제 모델·실제 SQLite vec_chunks 를 사용해 end-to-end 를 검증함.
@@ -13,9 +13,9 @@ import pytest
 from docpilot.db.schema import EMBEDDING_DIM
 
 
-class TestSentenceEmbedFn:
+class TestEmbedFn:
     def test_returns_correct_dimension(self, embed_fn):
-        # schema.py의 EMBEDDING_DIM(384)과 모델 출력 차원이 일치하는지 확인.
+        # schema.py의 EMBEDDING_DIM(1024)과 모델 출력 차원이 일치하는지 확인.
         # 불일치 시 vec_chunks INSERT에서 차원 오류 발생.
         vec = embed_fn("피지컬 AI 연구용역")
         assert len(vec) == EMBEDDING_DIM
