@@ -788,6 +788,7 @@ reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아�
 | 파라미터 | 타입 | 기본값 | 설명 |
 |----------|------|--------|------|
 | `query` | string | — | 검색 질의 |
+| `data_folder` | string | null | index()에 사용한 폴더 경로 — 인덱싱 완료 여부 확인용 (미지정 시 전체 잡 확인) |
 | `mode` | string | `"morpheme"` | `"exact"` / `"morpheme"` / `"vector"` |
 | `top_k` | int | 10 | 최대 반환 결과 수 |
 | `group_by_doc` | bool | false | true이면 문서 단위 집계 |
