@@ -109,8 +109,12 @@ def index_folder(
     folder: str | Path,
     embed_fn: EmbedFn | None = None,
     force: bool = False,
+    progress_fn: Callable[[int], None] | None = None,
 ) -> list[int]:
-    """Ingest and index all supported files in a folder. force=True re-indexes already indexed files."""
+    """Ingest and index all supported files in a folder. force=True re-indexes already indexed files.
+
+    progress_fn: optional callback called with the running count of indexed files after each file.
+    """
     from docpilot.ingestion import text as text_ing
     from docpilot.ingestion import pdf as pdf_ing
     from docpilot.ingestion import image as image_ing
@@ -162,6 +166,8 @@ def index_folder(
                 else:
                     doc_id = index(doc, embed_fn=embed_fn, file_hash=file_hash)
             doc_ids.append(doc_id)
+            if progress_fn:
+                progress_fn(len(doc_ids))
         except IngestionError as e:
             import sys
             print(f"[docpilot] skipped {file.name}: {e}", file=sys.stderr)
