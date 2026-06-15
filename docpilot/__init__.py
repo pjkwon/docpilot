@@ -57,6 +57,7 @@ _EXT_EXTRAS: dict[str, str | None] = {
     ".rst":  None,
     ".csv":  None,
     ".hwpx": None,
+    ".hwp":  "hwp",
     ".pdf":  "pdf",
     ".pptx": "pptx",
     ".docx": "docx",

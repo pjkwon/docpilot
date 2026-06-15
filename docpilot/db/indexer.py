@@ -120,6 +120,7 @@ def index_folder(
     from docpilot.ingestion import image as image_ing
     from docpilot.ingestion import pptx as pptx_ing
     from docpilot.ingestion import hwpx as hwpx_ing
+    from docpilot.ingestion import hwp as hwp_ing
     from docpilot.ingestion import docx as docx_ing
     from docpilot.exceptions import IngestionError
 
@@ -133,6 +134,7 @@ def index_folder(
         **{ext: image_ing.ingest for ext in image_ing.SUPPORTED_EXTENSIONS},
         ".pptx": pptx_ing.ingest,
         ".hwpx": hwpx_ing.ingest,
+        ".hwp": hwp_ing.ingest,
         ".docx": docx_ing.ingest,
     }
 

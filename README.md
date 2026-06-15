@@ -4,7 +4,7 @@
 
 ## 특징
 
-- **다양한 입력 소스** — TXT, MD, RST, CSV, PDF (OCR 폴백 포함), PPTX, 이미지(JPG/PNG 등)
+- **다양한 입력 소스** — TXT, MD, RST, CSV, HWPX, HWP, DOCX, PPTX, PDF (OCR 폴백 포함), 이미지(JPG/PNG 등)
 - **구조화 인제스트** — HWPX·DOCX 스타일 기반 헤딩, PPTX 불릿 계층, PDF 폰트 크기 기반 헤딩 감지, 의미 경계 청킹으로 RAG 검색 품질 향상
 - **다양한 출력 포맷** — HWPX, DOCX, PDF
 - **LLM 교체 가능** — Claude · OpenAI · Gemini · Grok · Ollama, 동일 인터페이스
@@ -40,6 +40,7 @@ pip install "docpilot[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
 
 ```bash
 pip install "docpilot[pdf]"       # PDF 읽기/쓰기 (OCR 포함)
+pip install "docpilot[hwp]"       # HWP 읽기 (한컴오피스 설치 필요)
 pip install "docpilot[pptx]"      # PPTX 읽기
 pip install "docpilot[image]"     # 이미지 읽기 (JPG, PNG 등)
 pip install "docpilot[docx]"      # DOCX 읽기/쓰기/템플릿 생성
@@ -58,7 +59,7 @@ pip install "docpilot[all]"       # 전체 설치
 복합 설치 예시:
 
 ```bash
-pip install "docpilot[pdf,pptx,image,docx]"           # 모든 파일 형식
+pip install "docpilot[pdf,hwp,pptx,image,docx]"       # 모든 파일 형식
 pip install "docpilot[openai,vec]"                     # OpenAI LLM + 임베딩 + 벡터 검색
 pip install "docpilot[bge,vec]"                        # 로컬 임베딩 + 벡터 검색 (API 키 불필요)
 pip install "docpilot[pdf,openai,morpheme,postgres]"   # 풀 스택
@@ -66,12 +67,13 @@ pip install "docpilot[pdf,openai,morpheme,postgres]"   # 풀 스택
 
 ### 시스템 의존성
 
-`[pdf]` extras는 Python 패키지 외에 시스템 바이너리가 필요합니다.
+일부 extras는 Python 패키지 외에 시스템 바이너리나 애플리케이션이 필요합니다.
 
-| 도구 | 용도 | 설치 |
-|------|------|------|
-| [Tesseract](https://github.com/tesseract-ocr/tesseract) | PDF OCR | [설치 가이드](https://tesseract-ocr.github.io/tessdoc/Installation.html) |
-| [Poppler](https://poppler.freedesktop.org/) | PDF → 이미지 변환 | Windows: `winget install poppler` |
+| 도구 | 용도 | 관련 extras | 설치 |
+|------|------|-------------|------|
+| [Tesseract](https://github.com/tesseract-ocr/tesseract) | PDF/이미지 OCR | `[pdf]` `[image]` | [설치 가이드](https://tesseract-ocr.github.io/tessdoc/Installation.html) |
+| [Poppler](https://poppler.freedesktop.org/) | PDF → 이미지 변환 | `[pdf]` | Windows: `winget install poppler` |
+| 한컴오피스 (한글) | HWP → HWPX 변환 (COM 자동화) | `[hwp]` | Windows 전용, 별도 라이선스 필요 |
 
 ## LLM 제공자
 
@@ -160,7 +162,16 @@ pilot.generate(
 
 ## 데이터 인덱싱
 
-지원 입력 파일 형식: `.txt`, `.md`, `.rst`, `.csv`, `.hwpx`, `.pdf`, `.pptx`, `.docx`, `.jpg`, `.png`, `.jpeg`, `.bmp`, `.tiff`, `.webp`
+**내장 지원** (추가 설치 없음): `.txt` `.md` `.rst` `.csv` `.hwpx` `.docx`
+
+**extras 필요:**
+
+| 형식 | 확장자 | 필요 extras | 비고 |
+|------|--------|-------------|------|
+| PDF | `.pdf` | `[pdf]` | OCR 폴백 포함 (Tesseract + Poppler 필요) |
+| HWP | `.hwp` | `[hwp]` | 한컴오피스 설치 필요 (COM 자동화) |
+| PowerPoint | `.pptx` | `[pptx]` | |
+| 이미지 | `.jpg` `.jpeg` `.png` `.bmp` `.tiff` `.webp` | `[image]` | OCR (Tesseract 필요) |
 
 ```python
 pilot.index("./data")   # 폴더 내 모든 지원 파일을 재귀적으로 인덱싱
