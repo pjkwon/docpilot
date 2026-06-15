@@ -92,6 +92,10 @@ def _replace_placeholders(root, sections: dict[str, str]) -> None:
     hp_linesegarray = f"{{{hp_ns}}}linesegarray"
     hp_lineseg = f"{{{hp_ns}}}lineseg"
 
+    # Collect all existing IDs so generated IDs never collide
+    existing_ids = {int(el.get("id", 0)) for el in root.iter(hp_p) if el.get("id")}
+    next_id = max(existing_ids, default=2_000_000_000) + 1
+
     for para in list(root.iter(hp_p)):
         t_elements = para.findall(f".//{hp_t}")
         if not t_elements:
@@ -126,12 +130,12 @@ def _replace_placeholders(root, sections: dict[str, str]) -> None:
             continue
 
         idx = list(parent).index(para)
-        base_id = int(para.get("id", "2000000000"))
 
         new_paras = []
-        for i, line in enumerate(lines):
+        for line in lines:
             new_p = copy.deepcopy(para)
-            new_p.set("id", str(base_id + 10000 + i))
+            new_p.set("id", str(next_id))
+            next_id += 1
             new_t_elements = new_p.findall(f".//{hp_t}")
             if new_t_elements:
                 new_t_elements[0].text = line
