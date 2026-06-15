@@ -122,6 +122,7 @@ def index_folder(
     from docpilot.ingestion import hwpx as hwpx_ing
     from docpilot.ingestion import hwp as hwp_ing
     from docpilot.ingestion import docx as docx_ing
+    from docpilot.ingestion import audio as audio_ing
     from docpilot.exceptions import IngestionError
 
     folder = Path(folder)
@@ -136,6 +137,7 @@ def index_folder(
         ".hwpx": hwpx_ing.ingest,
         ".hwp": hwp_ing.ingest,
         ".docx": docx_ing.ingest,
+        **{ext: audio_ing.ingest for ext in audio_ing.SUPPORTED_SUFFIXES},
     }
 
     doc_ids: list[int] = []

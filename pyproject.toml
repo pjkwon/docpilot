@@ -31,6 +31,9 @@ dependencies = [
     "python-docx>=1.2.0",
     "sentence-transformers>=5.5.1",
     "pyhwpx>=1.7.2",
+    "faster-whisper>=1.2.1",
+    "kiwipiepy>=0.23.1",
+    "sqlite-vec>=0.1.9",
 ]
 
 [project.urls]
@@ -45,6 +48,9 @@ hwp      = ["pyhwpx>=0.2"]
 pptx     = ["python-pptx>=1.0"]
 image    = ["Pillow>=10.0"]
 docx     = ["python-docx>=1.1"]
+audio-openai = ["openai>=1.0"]
+audio-local  = ["faster-whisper>=1.0"]
+audio        = ["faster-whisper>=1.0"]
 morpheme  = ["kiwipiepy>=0.18"]
 vec       = ["sqlite-vec>=0.1"]
 openai    = ["openai>=1.0"]
@@ -66,6 +72,7 @@ all       = [
     "FlagEmbedding>=1.0",
     "sentence-transformers>=3.0",
     "psycopg2-binary>=2.9", "pgvector>=0.3",
+    "faster-whisper>=1.0",
 ]
 dev = ["pytest>=8.0", "pytest-mock>=3.0"]
 

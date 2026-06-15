@@ -68,6 +68,13 @@ _EXT_EXTRAS: dict[str, str | None] = {
     ".tif":  "image",
     ".bmp":  "image",
     ".webp": "image",
+    ".mp3":  "audio",
+    ".mp4":  "audio",
+    ".wav":  "audio",
+    ".m4a":  "audio",
+    ".ogg":  "audio",
+    ".flac": "audio",
+    ".webm": "audio",
 }
 
 

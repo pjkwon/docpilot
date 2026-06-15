@@ -49,15 +49,15 @@ class DocxBuilder(BaseBuilder):
 
 def _replace_in_paragraph(para, sections: dict[str, str]) -> None:
     full_text = "".join(run.text for run in para.runs)
-    match = PLACEHOLDER_RE.search(full_text)
-    if not match:
+    if not PLACEHOLDER_RE.search(full_text):
         return
 
-    key = match.group(1)
-    if key not in sections:
+    replaced = PLACEHOLDER_RE.sub(
+        lambda m: sections.get(m.group(1), m.group(0)), full_text
+    )
+    if replaced == full_text:
         return
 
-    replaced = PLACEHOLDER_RE.sub(sections[key], full_text, count=1)
     lines = replaced.split("\n")
 
     # Set first line into the original paragraph (preserves run formatting)

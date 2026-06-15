@@ -4,7 +4,7 @@
 
 ## 특징
 
-- **다양한 입력 소스** — TXT, MD, RST, CSV, HWPX, HWP, DOCX, PPTX, PDF (OCR 폴백 포함), 이미지(JPG/PNG 등)
+- **다양한 입력 소스** — TXT, MD, RST, CSV, HWPX, HWP, DOCX, PPTX, PDF (OCR 폴백 포함), 이미지(JPG/PNG 등), 음성(MP3/WAV/M4A 등 — Whisper 전사)
 - **구조화 인제스트** — HWPX·DOCX 스타일 기반 헤딩, PPTX 불릿 계층, PDF 폰트 크기 기반 헤딩 감지, 의미 경계 청킹으로 RAG 검색 품질 향상
 - **다양한 출력 포맷** — HWPX, DOCX, PDF
 - **LLM 교체 가능** — Claude · OpenAI · Gemini · Grok · Ollama, 동일 인터페이스
@@ -42,9 +42,11 @@ pip install "docpilot[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
 pip install "docpilot[pdf]"       # PDF 읽기/쓰기 (OCR 포함)
 pip install "docpilot[hwp]"       # HWP 읽기 (한컴오피스 설치 필요)
 pip install "docpilot[pptx]"      # PPTX 읽기
-pip install "docpilot[image]"     # 이미지 읽기 (JPG, PNG 등)
-pip install "docpilot[docx]"      # DOCX 읽기/쓰기/템플릿 생성
-pip install "docpilot[morpheme]"  # 형태소 기반 한국어 검색
+pip install "docpilot[image]"        # 이미지 읽기 (JPG, PNG 등)
+pip install "docpilot[docx]"         # DOCX 읽기/쓰기/템플릿 생성
+pip install "docpilot[audio]"        # 음성 전사 — faster-whisper (로컬, 무료)
+pip install "docpilot[audio-openai]" # 음성 전사 — OpenAI Whisper API
+pip install "docpilot[morpheme]"     # 형태소 기반 한국어 검색
 pip install "docpilot[vec]"       # 벡터 임베딩 검색
 pip install "docpilot[openai]"    # OpenAI GPT / Grok / Ollama + 임베딩
 pip install "docpilot[gemini]"    # Google Gemini
@@ -172,6 +174,7 @@ pilot.generate(
 | HWP | `.hwp` | `[hwp]` | 한컴오피스 설치 필요 (COM 자동화) |
 | PowerPoint | `.pptx` | `[pptx]` | |
 | 이미지 | `.jpg` `.jpeg` `.png` `.bmp` `.tiff` `.webp` | `[image]` | OCR (Tesseract 필요) |
+| 음성 | `.mp3` `.mp4` `.wav` `.m4a` `.ogg` `.flac` `.webm` | `[audio]` 또는 `[audio-openai]` | Whisper 전사. `WHISPER_BACKEND=local`(기본) 또는 `openai` |
 
 ```python
 pilot.index("./data")   # 폴더 내 모든 지원 파일을 재귀적으로 인덱싱
@@ -979,6 +982,8 @@ index_status로 /Users/me/data 폴더 인덱싱 얼마나 됐는지 봐줘.
 | `DOCPILOT_MODEL` | 제공자 기본 | 특정 모델 지정 (예: `claude-opus-4-8`) |
 | `DOCPILOT_DATABASE_URL` | `~/docpilot.db` | DB 연결 문자열 (절대 경로 권장) |
 | `DOCPILOT_EMBED` | (자동) | 임베딩 모델 선택. 미설정 시 `multilingual-e5-base` 자동 사용 |
+| `WHISPER_BACKEND` | `local` | 음성 전사 백엔드. `local`(faster-whisper) 또는 `openai` |
+| `WHISPER_MODEL` | `large-v3` | faster-whisper 모델명. `tiny` / `base` / `small` / `medium` / `large-v3` |
 
 **`DOCPILOT_EMBED` 값 형식:**
 

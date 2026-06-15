@@ -41,6 +41,7 @@ test-output/
 hwpxskill/
 data/
 samples/
+output/
 
 # Runtime database
 *.db
@@ -48,3 +49,5 @@ samples/
 
 # Windows Zone.Identifier (인터넷 다운로드 파일 메타데이터, WSL 복사 시 생성)
 *:Zone.Identifier
+
+
