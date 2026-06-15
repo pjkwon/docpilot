@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import zipfile
 from pathlib import Path
 
@@ -23,14 +24,18 @@ def ingest(path: str | Path) -> IngestedDocument:
 
     try:
         with zipfile.ZipFile(path, "r") as zf:
-            content_xml = _find_content(zf)
-            root = etree.fromstring(content_xml)
+            section_xmls = _find_sections(zf)
+            paragraphs: list[str] = []
+            for xml_bytes in section_xmls:
+                root = etree.fromstring(xml_bytes)
+                paragraphs.extend(_extract_text(root))
     except zipfile.BadZipFile as e:
         raise IngestionError("Invalid HWPX file (not a ZIP)", detail=str(e)) from e
+    except IngestionError:
+        raise
     except Exception as e:
         raise IngestionError("Failed to parse HWPX", detail=str(e)) from e
 
-    paragraphs = _extract_text(root)
     content = "\n".join(paragraphs)
 
     return IngestedDocument(
@@ -44,15 +49,36 @@ def ingest(path: str | Path) -> IngestedDocument:
     )
 
 
-def _find_content(zf: zipfile.ZipFile) -> bytes:
-    candidates = [n for n in zf.namelist() if n.endswith("content.hml") or n.endswith("section0.xml")]
-    if not candidates:
-        raise IngestionError("No content file found in HWPX")
-    return zf.read(candidates[0])
+def _find_sections(zf: zipfile.ZipFile) -> list[bytes]:
+    """Return body XML bytes for all sections in document order.
+
+    HWPX comes in two layouts:
+    - Single-file HML  : Contents/content.hml  (body + head in one file)
+    - Multi-section    : Contents/section0.xml, section1.xml, … (one file per section)
+    """
+    names = zf.namelist()
+
+    hml = [n for n in names if n.endswith("content.hml")]
+    if hml:
+        return [zf.read(hml[0])]
+
+    sections = sorted(
+        (n for n in names if re.search(r"section\d+\.xml$", n, re.IGNORECASE)),
+        key=lambda n: int(re.search(r"(\d+)\.xml$", n).group(1)),
+    )
+    if sections:
+        return [zf.read(n) for n in sections]
+
+    raise IngestionError("No content file found in HWPX")
 
 
 def _extract_text(root) -> list[str]:
-    # Support both 2011 and 2012 Hancom namespace variants
+    """Extract non-empty paragraph text from an HML/section XML root.
+
+    Uses recursive iter so text inside text boxes, table cells, footnotes,
+    endnotes, and headers/footers (when embedded in the same XML) is included.
+    Supports both the 2011 and 2012 Hancom namespace variants.
+    """
     ns = root.nsmap.get("hp", "http://www.hancom.co.kr/hwpml/2012/paragraph")
     hp_p = f"{{{ns}}}p"
     hp_t = f"{{{ns}}}t"

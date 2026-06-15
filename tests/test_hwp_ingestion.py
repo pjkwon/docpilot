@@ -42,7 +42,7 @@ class TestHwpIngestion:
         hwp_path = tmp_path / "sample.hwp"
         hwp_path.write_bytes(b"HWP binary fake")
 
-        def _fake_save_as(out_path, Format):  # noqa: N803
+        def _fake_save_as(out_path, format):
             _write_hwpx(Path(out_path))
 
         mock_module = _mock_pyhwpx(save_as_side_effect=_fake_save_as)
