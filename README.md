@@ -154,6 +154,7 @@ pilot.generate(
     data_folder="./data",
     template="report",          # 내장 템플릿 이름 또는 파일 경로
     output="./output/report.hwpx",
+    top_k=10,                   # RAG 검색 청크 수 (기본값: 10)
 )
 ```
 
@@ -481,6 +482,24 @@ pilot.generate_template(samples=[...], output="./templates/my_report.docx", use_
 형태소 exact match로 찾은 청크와 의미적으로 유사한 청크(유의어 포함)를 함께 포착해 순위를 병합합니다.
 
 `pip install "docpilot[vec]"` 설치 시 `multilingual-e5-base` 로컬 모델이 자동으로 사용됩니다. 벡터 기능 없이 설치하면 형태소 AND → OR 폴백으로 동작합니다.
+
+#### top_k 조정 — 문서 유형별 컨텍스트 튜닝
+
+`generate()`의 `top_k`는 LLM에 전달할 RAG 검색 청크 수를 결정합니다 (기본값: 10).
+문서 유형에 따라 조정하면 생성 품질과 비용을 최적화할 수 있습니다.
+
+```python
+# 공문 — 짧고 구조적, 적은 컨텍스트로 충분
+pilot.generate(data_folder="./data", template="gonmun",   output="./out.hwpx", top_k=5)
+
+# 보고서 — 기본값
+pilot.generate(data_folder="./data", template="report",   output="./out.hwpx", top_k=10)
+
+# 제안서 — 많은 배경 자료가 필요
+pilot.generate(data_folder="./data", template="proposal", output="./out.hwpx", top_k=20)
+```
+
+MCP에서도 동일하게 `top_k` 파라미터를 `generate_document()` 툴에 전달할 수 있습니다.
 
 ### 개별 검색 API
 
@@ -842,8 +861,9 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 | 도구 | 설명 |
 |------|------|
 | `index` | 데이터 폴더를 검색 인덱스에 등록 (변경된 파일만 자동 재인덱싱) |
-| `search` | 인덱싱된 문서 검색 (필터·하이라이팅·문서 단위 집계 지원) |
-| `generate` | 데이터 폴더 + 템플릿 → 문서 생성 (output 미지정 시 `~/Documents/docpilot_YYYYMMDD_HHMMSS.hwpx`) |
+| `index_status` | 인덱싱 진행 상황 확인 — 경과 시간·처리 파일 수 실시간 조회 |
+| `search_documents` | 인덱싱된 문서 검색 (필터·하이라이팅·문서 단위 집계 지원) |
+| `generate_document` | 데이터 폴더 + 템플릿 → 문서 생성 (output 미지정 시 `~/Documents/docpilot_YYYYMMDD_HHMMSS.hwpx`) |
 | `generate_template` | 샘플 HWPX → 재사용 가능한 템플릿 생성 |
 | `estimate_cost` | 생성 전 API 토큰 비용 추정 |
 | `analyze_coverage` | 섹션별 데이터 커버리지 분석 — LOW 섹션은 LLM이 추론 작성할 가능성이 높음 |
@@ -885,11 +905,15 @@ reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아�
 /Users/me/samples 폴더의 hwpx 파일들로 템플릿 만들어서
 /Users/me/templates/my_report.hwpx 로 저장해줘.
 
-# 데이터 커버리지 확인 (generate 전 권장)
+# 인덱싱 상태 확인 (인덱싱이 오래 걸릴 때)
+인덱싱 상태 확인해줘.
+index_status로 /Users/me/data 폴더 인덱싱 얼마나 됐는지 봐줘.
+
+# 데이터 커버리지 확인 (generate_document 전 권장)
 /Users/me/data 폴더가 report 템플릿 섹션을 얼마나 커버하는지 분석해줘.
 ```
 
-#### search 도구 파라미터
+#### search_documents 도구 파라미터
 
 | 파라미터 | 타입 | 기본값 | 설명 |
 |----------|------|--------|------|
@@ -907,8 +931,8 @@ reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아�
 
 #### analyze_coverage 도구 파라미터
 
-섹션별 데이터 커버리지를 분석해 `generate()` 전에 LLM 추론 가능성을 미리 파악합니다.
-인덱싱 완료 후 호출하세요 (`index()` 또는 `generate()` 첫 호출 후).
+섹션별 데이터 커버리지를 분석해 `generate_document()` 전에 LLM 추론 가능성을 미리 파악합니다.
+인덱싱 완료 후 호출하세요 (`index()` 또는 `generate_document()` 첫 호출 후).
 
 | 파라미터 | 타입 | 기본값 | 설명 |
 |----------|------|--------|------|

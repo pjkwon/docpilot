@@ -406,6 +406,7 @@ class DocPilot:
         reindex: bool = False,
         extra_instructions: str | None = None,
         instructions_doc: str | Path | None = None,
+        top_k: int = 10,
     ) -> GenerateResult:
         """
         Full pipeline: index → search → map → build.
@@ -493,7 +494,7 @@ class DocPilot:
             for s in placeholder_names
         ]
 
-        mapping_result = self._rag_mapper.map(sections, instructions=extra_instructions)
+        mapping_result = self._rag_mapper.map(sections, instructions=extra_instructions, top_k=top_k)
 
         builder = self._build_builder(output_path)
         out_path = builder.build(template_path, mapping_result.sections, output_path)

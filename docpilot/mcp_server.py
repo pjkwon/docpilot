@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -19,6 +20,8 @@ class _IndexJob:
         self.thread = thread
         self.done_event = done_event
         self.count: int = 0
+        self.files_done: int = 0
+        self.started_at: float = 0.0
         self.error: Exception | None = None
 
 
@@ -92,18 +95,22 @@ mcp = FastMCP(
         "docpilot는 데이터 폴더와 템플릿으로 HWPX / PDF / DOCX 문서를 자동 생성하고, "
         "인덱싱된 문서를 검색할 수 있습니다.\n"
         "\n"
-        "## 문서 생성 워크플로 (generate)\n"
-        "generate()는 인덱싱을 직접 관리하지 않습니다. 반드시 아래 2단계로 호출하세요.\n"
-        "1단계: generate() 첫 호출 → 백그라운드 인덱싱 시작, '잠시 후 다시 호출하세요' 반환\n"
-        "2단계: 잠시 기다린 후 generate() 재호출 → 실제 문서 생성\n"
-        "인덱싱 오류 메시지가 반환되면 generate(reindex=True)로 재시도하세요.\n"
+        "## 문서 생성 워크플로 (generate_document)\n"
+        "generate_document()는 인덱싱을 직접 관리하지 않습니다. 반드시 아래 2단계로 호출하세요.\n"
+        "1단계: generate_document() 첫 호출 → 백그라운드 인덱싱 시작, '잠시 후 다시 호출하세요' 반환\n"
+        "2단계: 잠시 기다린 후 generate_document() 재호출 → 실제 문서 생성\n"
+        "인덱싱 오류 메시지가 반환되면 generate_document(reindex=True)로 재시도하세요.\n"
+        "인덱싱이 오래 걸릴 경우 index_status()로 진행 상황을 확인하세요.\n"
         "\n"
-        "## 검색 워크플로 (search)\n"
-        "index()로 폴더를 인덱싱한 뒤 search()로 질의합니다.\n"
+        "## 검색 워크플로 (search_documents)\n"
+        "index()로 폴더를 인덱싱한 뒤 search_documents()로 질의합니다.\n"
+        "\n"
+        "## 인덱싱 상태 확인 (index_status)\n"
+        "index_status()로 인덱싱 경과 시간과 처리 파일 수를 실시간으로 확인할 수 있습니다.\n"
         "\n"
         "## 커버리지 분석 (analyze_coverage)\n"
-        "generate() 전에 analyze_coverage()로 데이터 폴더가 각 섹션을 얼마나 커버하는지 확인할 수 있습니다.\n"
-        "LOW 섹션은 LLM이 추론하여 작성하므로 generate() 후 반드시 검토하세요.\n"
+        "generate_document() 전에 analyze_coverage()로 데이터 폴더가 각 섹션을 얼마나 커버하는지 확인할 수 있습니다.\n"
+        "LOW 섹션은 LLM이 추론하여 작성하므로 generate_document() 후 반드시 검토하세요.\n"
         "\n"
         "## 내장 템플릿\n"
         "report   — 일반 보고서: 보고서 제목, 작성일, 작성자/부서, "
@@ -124,6 +131,9 @@ def _start_index_job(folder_key: str, data_folder: str, force: bool = False) -> 
     done = threading.Event()
 
     def _run() -> None:
+        def _on_file(n: int) -> None:
+            job.files_done = n
+
         try:
             from docpilot.db import indexer
             pilot = _get_pilot()
@@ -131,6 +141,7 @@ def _start_index_job(folder_key: str, data_folder: str, force: bool = False) -> 
                 data_folder,
                 embed_fn=pilot._embed_fn,
                 force=force,
+                progress_fn=_on_file,
             )
             job.count = len(doc_ids)
         except Exception as exc:
@@ -140,6 +151,7 @@ def _start_index_job(folder_key: str, data_folder: str, force: bool = False) -> 
 
     t = threading.Thread(target=_run, daemon=True, name=f"docpilot-index-{folder_key}")
     job = _IndexJob(thread=t, done_event=done)
+    job.started_at = time.time()
 
     with _index_jobs_lock:
         _index_jobs[folder_key] = job
@@ -160,12 +172,22 @@ def index(data_folder: str, reindex: bool = False) -> str:
         data_folder: 인덱싱할 파일이 있는 폴더 경로 (절대 경로 권장, 하위 폴더 재귀 탐색)
         reindex: True이면 이미 인덱싱된 파일도 강제 재인덱싱 (기본값: False)
     """
-    folder_key = str(Path(data_folder).resolve())
+    _fp = Path(data_folder)
+    if not _fp.exists():
+        return f"폴더를 찾을 수 없습니다: {data_folder}\n절대 경로로 지정했는지 확인하세요."
+    if not _fp.is_dir():
+        return f"지정한 경로가 폴더가 아닙니다: {data_folder}"
+
+    folder_key = str(_fp.resolve())
 
     with _index_jobs_lock:
         existing = _index_jobs.get(folder_key)
         if existing and existing.thread.is_alive():
-            return f"이미 인덱싱 진행 중: {data_folder} — 완료 후 재시도하세요."
+            elapsed = int(time.time() - existing.started_at)
+            return (
+                f"이미 인덱싱 진행 중: {data_folder}\n"
+                f"경과 {elapsed}초, 처리 파일 {existing.files_done}개 — 완료 후 재시도하거나 index_status()로 확인하세요."
+            )
 
     _start_index_job(folder_key, data_folder, force=reindex)
     return (
@@ -176,7 +198,50 @@ def index(data_folder: str, reindex: bool = False) -> str:
 
 
 @mcp.tool()
-def search(
+def index_status(data_folder: str | None = None) -> str:
+    """인덱싱 작업의 현재 상태를 확인합니다.
+
+    인덱싱이 오래 걸릴 경우 이 도구로 진행 상황(경과 시간·처리 파일 수)을 확인하세요.
+
+    Args:
+        data_folder: 확인할 폴더 경로 (미지정 시 전체 작업 표시)
+    """
+    now = time.time()
+    with _index_jobs_lock:
+        if data_folder:
+            folder_key = str(Path(data_folder).resolve())
+            jobs = [(folder_key, _index_jobs[folder_key])] if folder_key in _index_jobs else []
+        else:
+            jobs = list(_index_jobs.items())
+
+    if not jobs:
+        return (
+            "인덱싱 기록이 없습니다.\n"
+            "index() 또는 generate_document()로 먼저 인덱싱하세요."
+        )
+
+    lines = []
+    for key, job in jobs:
+        elapsed = int(now - job.started_at) if job.started_at else 0
+        name = Path(key).name
+        if job.thread.is_alive():
+            lines.append(
+                f"[진행 중] {name}  경과 {elapsed}초  처리 파일 {job.files_done}개"
+            )
+        elif job.error:
+            lines.append(
+                f"[오류]    {name}  소요 {elapsed}초 → {job.error}\n"
+                "          index(reindex=True)로 재시도하세요."
+            )
+        else:
+            lines.append(
+                f"[완료]    {name}  소요 {elapsed}초  총 {job.count}개 파일"
+            )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def search_documents(
     query: str,
     data_folder: str | None = None,
     mode: str = "hybrid",
@@ -220,7 +285,11 @@ def search(
                     "먼저 index()를 호출하세요."
                 )
             if job.thread.is_alive():
-                return "인덱싱이 진행 중입니다. 잠시 후 다시 search()를 호출하세요."
+                elapsed = int(time.time() - job.started_at)
+                return (
+                    f"인덱싱 진행 중입니다 (경과 {elapsed}초, 처리 파일 {job.files_done}개). "
+                    "잠시 후 다시 search_documents()를 호출하세요."
+                )
             if job.error:
                 return (
                     f"인덱싱 중 오류가 발생했습니다: {job.error}\n"
@@ -230,7 +299,7 @@ def search(
             running = [k for k, j in _index_jobs.items() if j.thread.is_alive()]
             if running:
                 folders = ", ".join(Path(k).name for k in running)
-                return f"인덱싱이 진행 중입니다 ({folders}). 잠시 후 다시 search()를 호출하세요."
+                return f"인덱싱이 진행 중입니다 ({folders}). 잠시 후 다시 search_documents()를 호출하세요."
 
     from datetime import datetime
 
@@ -377,13 +446,14 @@ def _default_output(template: str, ext: str = ".hwpx") -> str:
 
 
 @mcp.tool()
-def generate(
+def generate_document(
     data_folder: str,
     template: str,
     output: str | None = None,
     reindex: bool = False,
     extra_instructions: str | None = None,
     instructions_doc: str | None = None,
+    top_k: int = 10,
 ) -> str:
     """데이터 폴더와 템플릿으로 문서를 생성합니다.
 
@@ -395,9 +465,20 @@ def generate(
         reindex: True이면 데이터 폴더를 강제로 재인덱싱합니다 (기본값: False)
         extra_instructions: LLM 프롬프트에 추가할 작성 지침 문자열
         instructions_doc: 작성 지침으로 사용할 파일 경로 (RFP·제안요청서 등). 파일 내용이 자동으로 지침에 추가됩니다.
+        top_k: RAG 검색에서 가져올 청크 수 (기본값: 10). 짧은 문서(공문 등)는 낮게, 긴 보고서·제안서는 높게 설정하세요.
     """
     if output is None:
         output = _default_output(template)
+
+    # 폴더 존재 여부 사전 검증
+    _fp = Path(data_folder)
+    if not _fp.exists():
+        return (
+            f"폴더를 찾을 수 없습니다: {data_folder}\n"
+            "절대 경로로 지정했는지 확인하세요."
+        )
+    if not _fp.is_dir():
+        return f"지정한 경로가 폴더가 아닙니다: {data_folder}"
 
     # 내장 템플릿(.hwpx)인데 output이 .docx/.pdf이면 LLM 호출 전에 조기 차단
     _BUILTIN_NAMES = {"report", "gonmun", "minutes", "proposal"}
@@ -413,7 +494,7 @@ def generate(
             "내장 템플릿(report/gonmun/minutes/proposal)은 HWPX 전용입니다."
         )
 
-    folder_key = str(Path(data_folder).resolve())
+    folder_key = str(_fp.resolve())
     with _index_jobs_lock:
         job = _index_jobs.get(folder_key)
 
@@ -422,16 +503,21 @@ def generate(
         _start_index_job(folder_key, data_folder, force=reindex)
         return (
             f"데이터 폴더 인덱싱을 시작했습니다: {data_folder}\n"
-            "잠시 후 다시 generate()를 호출하세요."
+            "잠시 후 다시 generate_document()를 호출하세요.\n"
+            "index_status()로 진행 상황을 확인할 수 있습니다."
         )
 
     if job.thread.is_alive():
-        return "인덱싱이 진행 중입니다. 잠시 후 다시 generate()를 호출하세요."
+        elapsed = int(time.time() - job.started_at)
+        return (
+            f"인덱싱 진행 중입니다 (경과 {elapsed}초, 처리 파일 {job.files_done}개). "
+            "잠시 후 다시 generate_document()를 호출하세요."
+        )
 
     if job.error:
         return (
             f"인덱싱 중 오류 발생: {job.error}\n"
-            "generate(reindex=True)로 재시도하세요."
+            "generate_document(reindex=True)로 재시도하세요."
         )
 
     # 인덱싱 완료 → 문서 생성 (bg 잡이 이미 인덱싱했으므로 reindex=False)
@@ -442,6 +528,7 @@ def generate(
         reindex=False,
         extra_instructions=extra_instructions,
         instructions_doc=instructions_doc,
+        top_k=top_k,
     )
     msg = (
         f"문서 생성 완료: {result.path}\n"

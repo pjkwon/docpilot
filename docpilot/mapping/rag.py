@@ -41,18 +41,19 @@ class RagMapper:
     def complete(self, prompt: str, max_tokens: int = 2048) -> str:
         return self._mapper.complete(prompt, max_tokens)
 
-    def map(self, sections: list[TemplateSection], instructions: str | None = None) -> MappingResult:
-        content = self.retrieve_content(sections)
+    def map(self, sections: list[TemplateSection], instructions: str | None = None, top_k: int | None = None) -> MappingResult:
+        content = self.retrieve_content(sections, top_k=top_k)
         return self._mapper.map(content, sections, instructions)
 
-    def retrieve_content(self, sections: list[TemplateSection]) -> str:
+    def retrieve_content(self, sections: list[TemplateSection], top_k: int | None = None) -> str:
         """Retrieve and assemble relevant chunks for the given sections."""
-        return _assemble(self._retrieve(sections))
+        return _assemble(self._retrieve(sections, top_k=top_k))
 
-    def _retrieve(self, sections: list[TemplateSection]) -> list[SearchResult]:
+    def _retrieve(self, sections: list[TemplateSection], top_k: int | None = None) -> list[SearchResult]:
         query = _build_query(sections)
+        effective_top_k = top_k if top_k is not None else self._top_k
         # Fetch more candidates when reranking so the reranker has room to reorder
-        candidate_k = self._top_k * 3 if self._use_reranker else self._top_k
+        candidate_k = effective_top_k * 3 if self._use_reranker else effective_top_k
 
         from docpilot.exceptions import SearchError
         from docpilot.search import morpheme as mor_search
@@ -80,9 +81,9 @@ class RagMapper:
 
         if self._use_reranker and results:
             from docpilot.search import reranker as reranker_mod
-            results = reranker_mod.rerank(query, results, self._top_k)
+            results = reranker_mod.rerank(query, results, effective_top_k)
 
-        return results[:self._top_k]
+        return results[:effective_top_k]
 
 
 def _rrf_merge(
