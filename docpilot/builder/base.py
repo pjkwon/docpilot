@@ -4,7 +4,14 @@ import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-PLACEHOLDER_RE = re.compile(r"\{\{(.+?)\}\}")
+# Matches {{key}} and {{?key}} and {{?key?}} — group(1) captures key WITHOUT leading/trailing ?
+PLACEHOLDER_RE = re.compile(r"\{\{\??(.+?)\??\}\}")
+# Matches only optional placeholders {{?key}} and {{?key?}}
+OPTIONAL_PLACEHOLDER_RE = re.compile(r"\{\{\?(.+?)\}\}")
+# Matches dynamic list placeholders {{?key?}} — group(1) captures key
+DYNAMIC_LIST_RE = re.compile(r"\{\{\?([^}?]+)\?\}\}")
+# Splits a numbered key: "단어1" → ("단어","1",""), "단어1_뜻" → ("단어","1","_뜻")
+_NUMBERED_GROUP_RE = re.compile(r"^(.+?)(\d+)(.*)$")
 
 
 class BaseBuilder(ABC):

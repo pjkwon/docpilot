@@ -5,7 +5,7 @@ import re
 import tempfile
 import zipfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,30 +20,6 @@ _BASE_HEADER_XML = _TEMPLATES_DIR / "base" / "Contents" / "header.xml"
 
 EmbedFn = Callable[[str], list[float]]
 
-# Built-in templates bundled with the package
-BUILTIN_TEMPLATES: dict[str, dict] = {
-    "report": {
-        "name": "업무/결과 보고서",
-        "description": "제목·일자·작성자·배경 및 목적·주요내용·결론으로 구성된 표준 업무 보고서",
-        "keywords": ["보고서", "보고", "결과보고", "업무보고", "현황", "사업보고"],
-    },
-    "gonmun": {
-        "name": "공문",
-        "description": "수신·참조·제목·본문·붙임으로 구성된 행정 공문",
-        "keywords": ["공문", "행정문서", "협조요청", "통보", "공지"],
-    },
-    "minutes": {
-        "name": "회의록",
-        "description": "회의명·일시·장소·참석자·안건·논의내용·결정사항으로 구성된 회의 기록",
-        "keywords": ["회의록", "회의", "미팅", "회의결과", "논의"],
-    },
-    "proposal": {
-        "name": "제안서/기획서",
-        "description": "개요·목적·추진배경·추진내용·기대효과·예산으로 구성된 제안 또는 기획 문서",
-        "keywords": ["제안서", "기획서", "제안", "제안요구서", "rfp", "기획", "계획서"],
-    },
-}
-
 _PLACEHOLDER_RE = re.compile(r"\{\{(.+?)\}\}")
 
 
@@ -54,6 +30,8 @@ class TemplateCandidate:
     header_xml: Path
     section_xml: Path
     source: str  # "builtin" | "saved"
+    sections_meta: dict = field(default_factory=dict)  # {name: {description, rule, ...}}
+    extra_instructions: str | None = None
 
 
 def build_auto(
@@ -150,21 +128,43 @@ def extract_header_xml(hwpx_path: str | Path, dest: str | Path) -> Path:
 # ------------------------------------------------------------------
 
 def _gather_builtin_candidates(instructions: str) -> list[TemplateCandidate]:
+    from docpilot.mapping.sidecar import load_sidecar
+
     instr_lower = instructions.lower()
     results: list[TemplateCandidate] = []
-    for key, info in BUILTIN_TEMPLATES.items():
-        if not any(kw in instr_lower for kw in info["keywords"]):
+
+    for template_dir in sorted(_TEMPLATES_DIR.iterdir()):
+        if not template_dir.is_dir() or template_dir.name == "base":
             continue
-        header = _TEMPLATES_DIR / key / "header.xml"
-        section = _TEMPLATES_DIR / key / "section0.xml"
-        if header.exists() and section.exists():
-            results.append(TemplateCandidate(
-                name=info["name"],
-                description=info["description"],
-                header_xml=header,
-                section_xml=section,
-                source="builtin",
-            ))
+        header = template_dir / "header.xml"
+        section = template_dir / "section0.xml"
+        if not header.exists() or not section.exists():
+            continue
+        sidecar = load_sidecar(template_dir)
+        if sidecar is None:
+            continue
+        if not any(kw in instr_lower for kw in sidecar.keywords):
+            continue
+        sections_meta = {
+            s.name: {
+                "description": s.description,
+                "rule": s.rule,
+                "style_hint": s.style_hint,
+                "optional": s.optional,
+                "is_list": s.is_list,
+                "group_max": s.group_max,
+            }
+            for s in (sidecar.sections or [])
+        }
+        results.append(TemplateCandidate(
+            name=sidecar.name or template_dir.name,
+            description=sidecar.description or "",
+            header_xml=header,
+            section_xml=section,
+            source="builtin",
+            sections_meta=sections_meta,
+            extra_instructions=sidecar.instructions,
+        ))
     return results
 
 
@@ -188,12 +188,15 @@ def _gather_saved_candidates(instructions: str, embed_fn: EmbedFn | None) -> lis
         header = Path(r.header_xml) if r.header_xml else _BASE_HEADER_XML
         if not header.exists():
             continue
+        meta = r.metadata_ or {}
         results.append(TemplateCandidate(
             name=r.name,
             description=r.description,
             header_xml=header,
             section_xml=section_xml,
             source="saved",
+            sections_meta=meta.get("sections", {}),
+            extra_instructions=meta.get("instructions"),
         ))
     return results
 
@@ -249,15 +252,20 @@ def _build_with_template(
     from docpilot.builder.hwpx_builder import HwpxBuilder
     from docpilot.builder.hwpx_dynamic_builder import pack_hwpx
 
+    from docpilot.mapping.sidecar import sections_meta_to_list
+
     section_xml_text = candidate.section_xml.read_text(encoding="utf-8")
-    sections = _extract_placeholders(section_xml_text)
-    if not sections:
+    placeholder_names = list(dict.fromkeys(_PLACEHOLDER_RE.findall(section_xml_text)))
+    if not placeholder_names:
         raise BuilderError(
             "No placeholders found in template",
             detail=str(candidate.section_xml),
         )
 
-    mapping = mapper.map(content_str, sections, instructions)
+    sections = sections_meta_to_list(placeholder_names, candidate.sections_meta)
+
+    merged_instructions = _merge_instructions(instructions, candidate.extra_instructions)
+    mapping = mapper.map(content_str, sections, merged_instructions)
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_hwpx = Path(tmp) / "_template.hwpx"
@@ -267,15 +275,9 @@ def _build_with_template(
     return output
 
 
-def _extract_placeholders(section_xml: str) -> list:
-    from docpilot.mapping.base import TemplateSection
-    seen: set[str] = set()
-    result = []
-    for key in _PLACEHOLDER_RE.findall(section_xml):
-        if key not in seen:
-            seen.add(key)
-            result.append(TemplateSection(name=key))
-    return result
+def _merge_instructions(user: str | None, template: str | None) -> str | None:
+    parts = [s for s in (template, user) if s and s.strip()]
+    return "\n".join(parts) if parts else None
 
 
 def _infer_structure_hint(hwpx_path: Path, instructions: str | None, mapper: BaseLLMMapper) -> str | None:

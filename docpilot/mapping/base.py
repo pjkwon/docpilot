@@ -14,6 +14,10 @@ class TemplateSection:
     name: str
     description: str = ""
     style_hint: str = ""
+    optional: bool = False     # True if originally {{?key}}
+    is_list: bool = False      # True if collapsed from {{?key1}}, {{?key2}}, ...
+    group_max: int = 0         # max N found in template (only meaningful when is_list=True)
+    rule: str = ""             # per-section writing rule (format, unit, style constraint, etc.)
 
 
 @dataclass
@@ -79,20 +83,45 @@ class BaseLLMMapper(ABC):
     ) -> str:
         def _fmt(s: TemplateSection) -> str:
             parts: list[str] = []
+            if s.is_list:
+                hint = f"[목록: 줄바꿈(\\n)으로 구분, 항목 수는 소스에 따라 자유롭게 결정 — 템플릿 슬롯 {s.group_max}개, 더 많으면 행 자동 추가·더 적으면 행 자동 삭제]"
+                parts.append(hint)
+            elif s.optional:
+                parts.append("[선택: 소스에 내용이 없으면 빈 문자열 \"\" 반환]")
             if s.style_hint:
                 parts.append(f"[스타일: {s.style_hint}]")
+            if s.rule:
+                parts.append(f"[규칙: {s.rule}]")
             if s.description:
                 parts.append(s.description)
             suffix = " ".join(parts)
             return f'- "{s.name}": {suffix}' if suffix else f'- "{s.name}"'
 
+        required = [s for s in sections if not s.optional and not s.is_list]
+        optional_s = [s for s in sections if s.optional and not s.is_list]
+        list_s = [s for s in sections if s.is_list]
+
         section_list = "\n".join(_fmt(s) for s in sections)
         section_keys = json.dumps([s.name for s in sections], ensure_ascii=False)
-        example_obj = json.dumps(
-            {"sections": {s.name: "..." for s in sections}},
-            ensure_ascii=False,
-            indent=2,
-        )
+
+        # Build example object: lists get array example, optionals get "" example
+        example_dict: dict = {}
+        for s in sections:
+            if s.is_list:
+                example_dict[s.name] = "항목1\n항목2\n항목3"
+            elif s.optional:
+                example_dict[s.name] = ""
+            else:
+                example_dict[s.name] = "..."
+        example_obj = json.dumps({"sections": example_dict}, ensure_ascii=False, indent=2)
+
+        optional_rule = ""
+        if optional_s:
+            optional_rule = "- [선택] 표시 섹션은 소스에 내용이 없으면 반드시 빈 문자열 \"\"로 반환하세요.\n"
+        list_rule = ""
+        if list_s:
+            list_rule = "- [목록] 표시 섹션은 항목을 줄바꿈(\\n)으로 구분해 하나의 문자열로 반환하세요. 소스에 있는 만큼만 추출하세요.\n"
+
         extra = (
             f"\n## 추가 작성 지침\n{instructions.strip()}\n"
             if instructions and instructions.strip()
@@ -109,7 +138,7 @@ class BaseLLMMapper(ABC):
 - 소스 데이터에 해당 섹션의 내용이 불충분하면, 문맥상 가장 적절한 내용으로 작성하세요.
 - 각 섹션 내용은 완성된 문장으로 작성하세요.
 - 섹션에 [스타일: ...]가 표시된 경우, 해당 서식(글꼴 크기, 표 셀 너비 등)을 참고해 적절한 분량으로 작성하세요. 내용이 짧으면 짧게, 길면 길게 — 분량은 내용에 맞게 자유롭게 결정하세요.
-{extra}
+{optional_rule}{list_rule}{extra}
 ## 채워야 할 섹션
 {section_list}
 
@@ -119,7 +148,7 @@ class BaseLLMMapper(ABC):
 
 {example_obj}"""
 
-    def _parse_response(self, raw: str, sections: list[TemplateSection]) -> dict[str, str]:
+    def _parse_response(self, raw: str, sections: list[TemplateSection]) -> dict[str, str | list[str]]:
         from docpilot.exceptions import MappingError
 
         try:
@@ -130,11 +159,26 @@ class BaseLLMMapper(ABC):
         except (ValueError, json.JSONDecodeError) as e:
             raise MappingError("Failed to parse LLM response as JSON", detail=raw[:200]) from e
 
-        missing = [s.name for s in sections if s.name not in result]
-        if missing:
+        # Required sections must be present; optional/list sections default to "" / []
+        required_missing = [
+            s.name for s in sections
+            if not s.optional and not s.is_list and s.name not in result
+        ]
+        if required_missing:
             raise MappingError(
                 "LLM response missing sections",
-                detail=", ".join(missing),
+                detail=", ".join(required_missing),
             )
 
-        return {s.name: result[s.name] for s in sections}
+        out: dict[str, str | list[str]] = {}
+        for s in sections:
+            val = result.get(s.name, "")
+            if s.is_list:
+                # Value should be a newline-separated string; split into list
+                if isinstance(val, list):
+                    out[s.name] = [str(v).strip() for v in val if str(v).strip()]
+                else:
+                    out[s.name] = [v.strip() for v in str(val).split("\n") if v.strip()]
+            else:
+                out[s.name] = str(val)
+        return out

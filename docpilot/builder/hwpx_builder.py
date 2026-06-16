@@ -17,7 +17,7 @@ class HwpxBuilder(BaseBuilder):
     def build(
         self,
         template: str | Path,
-        sections: dict[str, str],
+        sections: dict[str, str | list[str]],
         output: str | Path,
     ) -> Path:
         template, output = self._validate_paths(template, output)
@@ -84,7 +84,7 @@ def _pack(src: Path, output: Path) -> None:
             zf.write(file, file.relative_to(src))
 
 
-def _replace_placeholders(root, sections: dict[str, str]) -> None:
+def _replace_placeholders(root, sections: dict[str, str | list[str]]) -> None:
     # Detect hp namespace from document root (supports both 2011 and 2012 variants)
     hp_ns = root.nsmap.get("hp", "http://www.hancom.co.kr/hwpml/2012/paragraph")
     hp_t = f"{{{hp_ns}}}t"
@@ -110,7 +110,9 @@ def _replace_placeholders(root, sections: dict[str, str]) -> None:
         if key not in sections:
             continue
 
-        replaced = PLACEHOLDER_RE.sub(sections[key], full_text, count=1)
+        val = sections[key]
+        fill = "\n".join(val) if isinstance(val, list) else val
+        replaced = PLACEHOLDER_RE.sub(fill, full_text, count=1)
         lines = replaced.split("\n")
 
         if len(lines) == 1:

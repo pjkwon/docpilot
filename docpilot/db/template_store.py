@@ -21,15 +21,32 @@ def save(
     header_xml: str | Path | None = None,
     tags: list[str] | None = None,
     metadata: dict | None = None,
+    sections_meta: dict | None = None,
+    auto_sections_meta: bool = True,
+    mapper=None,
+    model: str = "claude-sonnet-4-6",
     embed_fn: EmbedFn | None = None,
 ) -> int:
     """
     Persist a TemplateRecord and index it for search.
 
+    sections_meta: per-section metadata dict {name: {description, rule, ...}}.
+    auto_sections_meta: if True and sections_meta is None, infer via LLM.
     If a record for this path already exists, it is replaced.
     Returns the template record ID.
     """
     path_str = str(path)
+
+    resolved_sections = sections_meta
+    if resolved_sections is None and auto_sections_meta:
+        try:
+            resolved_sections = generate_sections_meta(path, mapper=mapper, model=model)
+        except Exception:
+            resolved_sections = {}
+
+    merged_metadata: dict = dict(metadata or {})
+    if resolved_sections:
+        merged_metadata["sections"] = resolved_sections
 
     with client.session() as db:
         existing = db.query(TemplateRecord).filter(TemplateRecord.path == path_str).first()
@@ -43,7 +60,7 @@ def save(
             header_xml=str(header_xml) if header_xml is not None else None,
             description=description,
             tags=tags,
-            metadata_=metadata,
+            metadata_=merged_metadata or None,
         )
         db.add(record)
         db.flush()
@@ -138,11 +155,13 @@ def update(
     name: str | None = None,
     description: str | None = None,
     tags: list[str] | None = None,
+    sections_meta: dict | None = None,
     embed_fn: EmbedFn | None = None,
 ) -> bool:
     """
     Update template metadata. Only provided fields are changed.
 
+    sections_meta: replaces the "sections" key in metadata_ when provided.
     If description is updated and embed_fn is given, the vector index is rebuilt.
     Returns True if found and updated.
     """
@@ -157,6 +176,10 @@ def update(
             record.description = description
         if tags is not None:
             record.tags = tags
+        if sections_meta is not None:
+            current_meta = dict(record.metadata_ or {})
+            current_meta["sections"] = sections_meta
+            record.metadata_ = current_meta
 
         db.flush()
 
@@ -167,6 +190,73 @@ def update(
             _set_embedding(db, record.id, embed_fn(record.description))
 
     return True
+
+
+def generate_sections_meta(
+    section_xml_path: str | Path,
+    mapper=None,
+    model: str = "claude-sonnet-4-6",
+) -> dict:
+    """
+    Infer per-section metadata (description, rule) for each placeholder via LLM.
+
+    Returns {placeholder_name: {"description": ..., "rule": ...}}.
+    Uses mapper if provided, otherwise falls back to raw anthropic.
+    """
+    import json as _json
+    import re as _re
+
+    section_xml = Path(section_xml_path).read_text(encoding="utf-8")
+    keys = list(dict.fromkeys(_re.compile(r"\{\{(.+?)\}\}").findall(section_xml)))
+    if not keys:
+        return {}
+
+    keys_json = _json.dumps(keys, ensure_ascii=False)
+    prompt_body = (
+        f"다음은 HWPX 문서 템플릿의 플레이스홀더 목록입니다:\n{keys_json}\n\n"
+        "각 플레이스홀더에 대해:\n"
+        "- description: 어떤 내용을 넣어야 하는지 간단히 설명\n"
+        "- rule: 형식 규칙이 있으면 기술, 없으면 빈 문자열 (예: 'YYYY년 MM월 DD일 형식')\n\n"
+        "다른 텍스트 없이 아래 JSON 형식으로만 응답하세요:\n"
+        '{"플레이스홀더명": {"description": "...", "rule": "..."}, ...}'
+    )
+
+    def _parse(raw: str) -> dict:
+        try:
+            start = raw.index("{")
+            end = raw.rindex("}") + 1
+            result = _json.loads(raw[start:end])
+            return result if isinstance(result, dict) else {}
+        except (ValueError, _json.JSONDecodeError):
+            return {}
+
+    if mapper is not None:
+        from docpilot.mapping.base import TemplateSection
+        mapping = mapper.map(
+            content=prompt_body,
+            sections=[TemplateSection(
+                name="sections_meta",
+                description=(
+                    f"위 설명에 따라 플레이스홀더 목록 {keys_json}의 메타데이터를 "
+                    "JSON 객체 문자열로 반환하세요."
+                ),
+            )],
+        )
+        return _parse(mapping.sections.get("sections_meta", "{}"))
+
+    try:
+        import anthropic
+    except ImportError as e:
+        raise ImportError("anthropic required: pip install anthropic") from e
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    ai = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+    response = ai.messages.create(
+        model=model,
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt_body}],
+    )
+    return _parse(response.content[0].text.strip())
 
 
 def generate_description(

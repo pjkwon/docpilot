@@ -1,0 +1,18 @@
+{
+  "name": "업무/결과 보고서",
+  "description": "제목·일자·작성자·배경 및 목적·주요내용·결론으로 구성된 표준 업무 보고서",
+  "keywords": ["보고서", "보고", "결과보고", "업무보고", "현황", "사업보고"],
+  "instructions": "객관적 사실 중심으로 작성하세요. 수치와 근거를 명확히 기재합니다.",
+  "sections": {
+    "보고서 제목": { "description": "보고서 내용을 대표하는 제목" },
+    "작성일: YYYY년 MM월 DD일": { "rule": "YYYY년 MM월 DD일 형식으로 날짜만 작성" },
+    "작성자/부서": { "description": "작성자 직위·성명 및 부서명" },
+    "섹션1 제목": { "description": "첫 번째 본문 섹션의 소제목" },
+    "섹션1 내용": { "description": "첫 번째 섹션 본문 내용" },
+    "섹션2 제목": { "description": "두 번째 본문 섹션의 소제목", "optional": true },
+    "섹션2 내용": { "description": "두 번째 섹션 본문 내용", "optional": true },
+    "표 삽입 위치": { "description": "표나 수치 데이터 내용", "optional": true },
+    "결론": { "description": "결론 섹션 소제목" },
+    "결론 내용": { "description": "핵심 결론과 후속 조치를 간결하게 서술" }
+  }
+}

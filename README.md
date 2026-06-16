@@ -267,6 +267,74 @@ LLM이 생성한 내용에 `\n`이 포함되면 해당 위치에 단락이 자�
 
 템플릿을 직접 만들 때는 플레이스홀더를 실제 내용이 들어갈 위치에 삽입하면 해당 위치의 스타일이 자동으로 추출됩니다. `generate_template()`으로 자동 생성한 템플릿도 샘플 문서의 본문 스타일을 복제하므로 동일하게 적용됩니다.
 
+### 가변 플레이스홀더 (동적 리스트)
+
+항목 개수가 데이터에 따라 달라지는 섹션은 `{{?key?}}` 문법을 사용합니다. LLM이 소스 데이터를 보고 항목 수를 직접 결정해 리스트로 채웁니다.
+
+```
+{{?주요 세션별 발표 내용 요약?}}
+```
+
+기존 `{{key}}`와 달리 `{{?key?}}`는 HWPX·DOCX 빌더에서 각 항목을 별도 단락으로 클론해 삽입합니다.
+
+#### 번호 붙은 선택 그룹
+
+고정 최대 개수로 선택적 항목을 표현하려면 번호 접미사를 붙입니다. 예를 들어 첨부 파일 목록을 최대 3개로 제한하려면:
+
+```
+{{?첨부파일1}}
+{{?첨부파일2}}
+{{?첨부파일3}}
+```
+
+docpilot은 이 세 플레이스홀더를 자동으로 `첨부파일` 리스트(`group_max=3`)로 합쳐 처리합니다.  
+실제 첨부 파일이 1개라면 두 번째·세 번째 단락은 자동으로 제거됩니다.
+
+#### 기존 템플릿에서 변환
+
+이미 만든 템플릿의 `{{key}}`를 `{{?key?}}`로 변환하려면:
+
+```python
+from docpilot import convert_to_list_placeholder
+
+# 새 파일로 저장
+convert_to_list_placeholder(
+    "학회참석보고서_템플릿.hwpx",
+    keys=["주요 세션별 발표 내용 요약"],
+    output="학회참석보고서_템플릿_v2.hwpx",
+)
+
+# 여러 키를 한 번에 / output 생략 시 원본 덮어쓰기
+convert_to_list_placeholder("template.docx", keys=["항목", "발표자"])
+```
+
+### 사이드카 JSON으로 섹션 메타데이터 정의
+
+템플릿 파일을 수정하지 않고 옆에 `.json` 파일만 두면 섹션별 `description`, `rule`, `is_list` 등이 자동으로 반영됩니다.
+
+| 템플릿 유형 | 사이드카 위치 |
+|-------------|---------------|
+| 파일 기반 (`report.hwpx`) | 같은 폴더의 `report.json` |
+| 디렉터리 기반 (내장 템플릿) | 템플릿 폴더 안의 `sidecar.json` |
+
+```json
+{
+  "name": "학회 참석 보고서",
+  "description": "학회·세미나 참석 후 제출하는 보고서",
+  "keywords": ["학회", "세미나", "발표"],
+  "instructions": "전문 용어는 한국어로 병기하세요.",
+  "sections": {
+    "행사명": { "rule": "공식 행사 명칭 전체를 기재" },
+    "주요 세션별 발표 내용 요약": { "is_list": true, "description": "각 세션 발표 핵심 내용 1–3문장" },
+    "출장 기간": { "rule": "YYYY년 MM월 DD일 ~ MM월 DD일" }
+  }
+}
+```
+
+`instructions`는 전역 작성 지침으로 LLM 프롬프트에 주입됩니다. 섹션별 `rule`은 형식 규칙, `description`은 작성 가이드입니다.
+
+사이드카 적용 우선순위: **사이드카 JSON > DB 저장 sections_meta > 템플릿 파일 기본값**
+
 ### 플레이스홀더 없는 파일을 양식으로 사용하기 (Reference Mode)
 
 `{{섹션명}}`이 없는 일반 문서 파일도 `template`에 그대로 넘길 수 있습니다. docpilot이 파일 내용을 읽어 LLM으로 섹션 구조를 자동 추론하고, 해당 구조로 문서를 생성합니다.
@@ -419,8 +487,44 @@ extract_header_xml("./reference/old_report.hwpx", dest="./my_header.xml")
 
 ## 저장 템플릿 관리
 
+### 템플릿 저장 (`save_template`)
+
+만든 HWPX 템플릿을 이름으로 등록하면 이후 `generate()`에서 파일 경로 없이 이름만으로 참조할 수 있습니다.
+
+```python
+# HWPX 템플릿 저장 — section0.xml·header.xml은 ~/.docpilot/templates/<name>/에 자동 추출
+record_id = pilot.save_template(
+    name="학회보고서",
+    path="학회참석보고서_템플릿.hwpx",
+    description="학회·세미나 참석 후 제출하는 보고서",
+    tags=["학회", "보고서"],
+    # auto_sections_meta=True (기본값): LLM이 섹션별 description/rule 자동 추론
+)
+
+# 이후 이름으로 바로 사용
+result = pilot.generate(
+    data_folder="./data",
+    template="학회보고서",          # 파일 경로 대신 저장한 이름
+    output="./output/result.hwpx",
+)
+```
+
+`auto_sections_meta=True`(기본값)이면 저장 시 LLM이 각 플레이스홀더를 분석해 `description`·`rule`을 자동 추론합니다. 이 메타데이터는 이후 `generate()` 시 RAG 검색 품질과 LLM 작성 지침에 활용됩니다.
+
+> `.docx`·`.pdf` 템플릿은 파일 경로를 직접 `generate(template=...)`에 전달하거나, 사이드카 JSON으로 메타데이터를 정의하세요.
+
+### 템플릿 목록
+
+```python
+# 내장 템플릿 + DB 저장 템플릿 모두 반환
+print(DocPilot.list_templates())
+# {'report': '일반 보고서 — ...', 'gonmun': '공문 — ...', '학회보고서': '학회·세미나 참석 후 ...'}
+```
+
+### 저수준 DB API
+
 동적 생성된 양식은 `~/docpilot_templates/`에 자동 저장되고 DB에 인덱싱됩니다.
-`template_store` API로 직접 관리할 수 있습니다.
+`template_store`로 직접 관리할 수 있습니다.
 
 ```python
 from docpilot.db import template_store
@@ -435,6 +539,7 @@ results = template_store.search("제주 학회 발표 보고서 양식", embed_f
 # 삭제
 template_store.delete(3)                                          # ID로
 template_store.delete_by_path("~/docpilot_templates/20260610_보고서_제목.xml")
+DocPilot.delete_template(3)                                       # DocPilot 클래스 메서드
 
 # 이름·설명·태그 수정 (설명 변경 시 embed_fn 넘기면 벡터 재인덱싱)
 template_store.update(3, name="제주 학회 발표 보고서", embed_fn=embed)
@@ -470,7 +575,7 @@ pilot.generate(data_folder="./data", template="my_report", output="./out.hwpx")
 pilot.generate(data_folder="./data", template="my_report", output="./out.docx")
 ```
 
-> 템플릿 탐색 순서: 파일 경로 → 내장 이름(`report`/`gonmun`/`minutes`) → `./templates/` 폴더
+> 템플릿 탐색 순서: 파일 경로 → 내장 이름(`report`/`gonmun`/`minutes`) → `./templates/` 폴더 → DB 저장 템플릿
 
 공통 섹션 신뢰도가 낮으면 LLM 보조를 활성화해 더 정확하게 추출합니다.
 

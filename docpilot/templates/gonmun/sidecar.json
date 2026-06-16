@@ -1,0 +1,24 @@
+{
+  "name": "공문",
+  "description": "수신·참조·제목·본문·기관 정보로 구성된 행정 공문",
+  "keywords": ["공문", "행정문서", "협조요청", "통보", "공지"],
+  "instructions": "행정 공문 형식에 맞게 격식체로 작성하세요.",
+  "sections": {
+    "기관명": { "description": "발신 기관명 전체. 약칭 금지" },
+    "수신자": { "description": "수신 기관명 또는 직위와 성명" },
+    "경유": { "description": "경유 기관명", "optional": true },
+    "제목": { "description": "공문 제목. 간결하고 명확하게" },
+    "본문1": { "description": "본문 첫 번째 항목" },
+    "본문2": { "description": "본문 두 번째 항목", "optional": true },
+    "표 또는 상세내용": { "description": "붙임 또는 상세 내용", "optional": true },
+    "직위 성명": { "description": "발신자 직위와 성명. 예: 팀장 홍길동" },
+    "시행번호": { "description": "시행 문서 번호. 예: 총무팀-2025-001" },
+    "시행일자": { "rule": "YYYY년 MM월 DD일 형식" },
+    "우편번호": { "rule": "5자리 숫자" },
+    "주소": { "description": "기관 도로명 주소" },
+    "홈페이지": { "description": "기관 홈페이지 URL", "optional": true },
+    "전화번호": { "rule": "000-0000-0000 형식" },
+    "팩스번호": { "rule": "000-0000-0000 형식" },
+    "이메일": { "rule": "이메일 주소 형식" }
+  }
+}
