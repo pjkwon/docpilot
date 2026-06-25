@@ -979,8 +979,10 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 
 | 도구 | 설명 |
 |------|------|
-| `index` | 데이터 폴더를 검색 인덱스에 등록 (변경된 파일만 자동 재인덱싱) |
+| `index` | 데이터 폴더를 검색 인덱스에 등록 (변경된 파일만 자동 재인덱싱). `files=`로 특정 파일만 지정 가능 |
 | `index_status` | 인덱싱 진행 상황 확인 — 경과 시간·처리 파일 수 실시간 조회 |
+| `cancel_index` | 진행 중인 인덱싱 취소 — 현재 처리 파일 완료 후 중단 |
+| `cleanup_index` | 디스크에 없는 파일의 고아 레코드 삭제 — 폴더 이름 변경·파일 삭제 후 사용 |
 | `search_documents` | 인덱싱된 문서 검색 (필터·하이라이팅·문서 단위 집계 지원) |
 | `generate_document` | 데이터 폴더 + 템플릿 → 문서 생성 (output 미지정 시 `~/Documents/docpilot_YYYYMMDD_HHMMSS.hwpx`) |
 | `generate_template` | 샘플 HWPX → 재사용 가능한 템플릿 생성 |
@@ -1027,6 +1029,17 @@ reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아�
 # 인덱싱 상태 확인 (인덱싱이 오래 걸릴 때)
 인덱싱 상태 확인해줘.
 index_status로 /Users/me/data 폴더 인덱싱 얼마나 됐는지 봐줘.
+
+# 특정 파일만 인덱싱
+/Users/me/data 폴더에서 report.pdf, summary.hwpx 파일만 인덱싱해줘.
+
+# 인덱싱 취소 (무한 루프 등 문제 발생 시)
+인덱싱 취소해줘.
+cancel_index로 /Users/me/data 폴더 인덱싱 중단해줘.
+
+# 고아 레코드 정리 (폴더 이름 변경 또는 파일 삭제 후)
+인덱스 정리해줘.
+cleanup_index로 /Users/me/old-data 폴더 고아 레코드 삭제해줘.
 
 # 데이터 커버리지 확인 (generate_document 전 권장)
 /Users/me/data 폴더가 report 템플릿 섹션을 얼마나 커버하는지 분석해줘.

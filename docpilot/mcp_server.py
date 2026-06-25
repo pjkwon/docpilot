@@ -16,13 +16,15 @@ _pilot = None
 # ---------------------------------------------------------------------------
 
 class _IndexJob:
-    def __init__(self, thread: threading.Thread, done_event: threading.Event) -> None:
+    def __init__(self, thread: threading.Thread, done_event: threading.Event, cancel_event: threading.Event) -> None:
         self.thread = thread
         self.done_event = done_event
+        self.cancel_event = cancel_event
         self.count: int = 0
         self.files_done: int = 0
         self.started_at: float = 0.0
         self.error: Exception | None = None
+        self.cancelled: bool = False
 
 
 _index_jobs: dict[str, _IndexJob] = {}
@@ -104,9 +106,24 @@ mcp = FastMCP(
         "\n"
         "## 검색 워크플로 (search_documents)\n"
         "index()로 폴더를 인덱싱한 뒤 search_documents()로 질의합니다.\n"
+        "인덱스는 폴더 단위로 누적되므로 여러 폴더를 인덱싱하면 전체를 한 번에 검색할 수 있습니다.\n"
+        "특정 폴더·파일만 검색하려면 source_pattern 파라미터를 사용하세요.\n"
         "\n"
         "## 인덱싱 상태 확인 (index_status)\n"
         "index_status()로 인덱싱 경과 시간과 처리 파일 수를 실시간으로 확인할 수 있습니다.\n"
+        "\n"
+        "## 특정 파일만 인덱싱 (index files=)\n"
+        "index(data_folder=..., files=[\"파일명.pdf\", \"파일명2.hwpx\"])으로 폴더 내 특정 파일만 인덱싱할 수 있습니다.\n"
+        "존재하지 않는 파일명을 지정하면 인덱싱을 시작하지 않고 오류를 반환합니다.\n"
+        "\n"
+        "## 인덱싱 취소 (cancel_index)\n"
+        "cancel_index()로 진행 중인 인덱싱을 중단할 수 있습니다. "
+        "취소는 현재 처리 중인 파일이 완료된 직후 적용됩니다.\n"
+        "\n"
+        "## 고아 레코드 정리 (cleanup_index)\n"
+        "폴더 이름 변경·파일 삭제 후 cleanup_index()를 호출하면 "
+        "디스크에 존재하지 않는 파일의 인덱스 레코드를 삭제합니다.\n"
+        "data_folder를 지정하면 해당 경로 하위 레코드만 검사합니다.\n"
         "\n"
         "## 커버리지 분석 (analyze_coverage)\n"
         "generate_document() 전에 analyze_coverage()로 데이터 폴더가 각 섹션을 얼마나 커버하는지 확인할 수 있습니다.\n"
@@ -126,9 +143,15 @@ mcp = FastMCP(
 )
 
 
-def _start_index_job(folder_key: str, data_folder: str, force: bool = False) -> _IndexJob:
+def _start_index_job(
+    folder_key: str,
+    data_folder: str,
+    force: bool = False,
+    files: list[str] | None = None,
+) -> _IndexJob:
     """백그라운드 인덱싱 스레드를 시작하고 _IndexJob을 반환한다."""
     done = threading.Event()
+    cancel = threading.Event()
 
     def _run() -> None:
         def _on_file(n: int) -> None:
@@ -142,15 +165,19 @@ def _start_index_job(folder_key: str, data_folder: str, force: bool = False) -> 
                 embed_fn=pilot._embed_fn,
                 force=force,
                 progress_fn=_on_file,
+                cancel_event=cancel,
+                files=files,
             )
             job.count = len(doc_ids)
+        except indexer.IndexCancelledError:
+            job.cancelled = True
         except Exception as exc:
             job.error = exc
         finally:
             done.set()
 
     t = threading.Thread(target=_run, daemon=True, name=f"docpilot-index-{folder_key}")
-    job = _IndexJob(thread=t, done_event=done)
+    job = _IndexJob(thread=t, done_event=done, cancel_event=cancel)
     job.started_at = time.time()
 
     with _index_jobs_lock:
@@ -161,7 +188,7 @@ def _start_index_job(folder_key: str, data_folder: str, force: bool = False) -> 
 
 
 @mcp.tool()
-def index(data_folder: str, reindex: bool = False) -> str:
+def index(data_folder: str, reindex: bool = False, files: list[str] | None = None) -> str:
     """데이터 폴더를 검색 인덱스에 등록합니다. search() 전에 먼저 실행하세요.
 
     generate()는 내부적으로 인덱싱을 자동 수행하므로, 순수 검색 목적으로만
@@ -171,12 +198,25 @@ def index(data_folder: str, reindex: bool = False) -> str:
     Args:
         data_folder: 인덱싱할 파일이 있는 폴더 경로 (절대 경로 권장, 하위 폴더 재귀 탐색)
         reindex: True이면 이미 인덱싱된 파일도 강제 재인덱싱 (기본값: False)
+        files: 인덱싱할 파일명 목록 (예: ["report.pdf", "data.xlsx"]). 미지정 시 폴더 전체 인덱싱.
+               폴더 내 존재하지 않는 파일명이 있으면 인덱싱을 시작하지 않고 오류를 반환합니다.
     """
     _fp = Path(data_folder)
     if not _fp.exists():
         return f"폴더를 찾을 수 없습니다: {data_folder}\n절대 경로로 지정했는지 확인하세요."
     if not _fp.is_dir():
         return f"지정한 경로가 폴더가 아닙니다: {data_folder}"
+
+    if files is not None:
+        existing_names = {f.name.lower() for f in _fp.rglob("*") if f.is_file()}
+        missing = [f for f in files if f.lower() not in existing_names]
+        if missing:
+            missing_str = "\n".join(f"  · {f}" for f in missing)
+            return (
+                f"다음 파일을 폴더에서 찾을 수 없습니다:\n{missing_str}\n"
+                f"폴더: {data_folder}\n"
+                "파일명(확장자 포함)을 정확히 입력했는지 확인하세요."
+            )
 
     folder_key = str(_fp.resolve())
 
@@ -189,7 +229,15 @@ def index(data_folder: str, reindex: bool = False) -> str:
                 f"경과 {elapsed}초, 처리 파일 {existing.files_done}개 — 완료 후 재시도하거나 index_status()로 확인하세요."
             )
 
-    _start_index_job(folder_key, data_folder, force=reindex)
+    _start_index_job(folder_key, data_folder, force=reindex, files=files)
+
+    if files:
+        files_str = ", ".join(files)
+        return (
+            f"인덱싱 시작됨: {data_folder}\n"
+            f"대상 파일: {files_str}\n"
+            "백그라운드에서 진행 중입니다."
+        )
     return (
         f"인덱싱 시작됨: {data_folder}\n"
         "백그라운드에서 진행 중입니다. "
@@ -225,8 +273,13 @@ def index_status(data_folder: str | None = None) -> str:
         elapsed = int(now - job.started_at) if job.started_at else 0
         name = Path(key).name
         if job.thread.is_alive():
+            cancel_hint = "  (취소 요청됨, 현재 파일 처리 후 중단)" if job.cancel_event.is_set() else ""
             lines.append(
-                f"[진행 중] {name}  경과 {elapsed}초  처리 파일 {job.files_done}개"
+                f"[진행 중] {name}  경과 {elapsed}초  처리 파일 {job.files_done}개{cancel_hint}"
+            )
+        elif job.cancelled:
+            lines.append(
+                f"[취소됨]  {name}  소요 {elapsed}초  처리 파일 {job.files_done}개"
             )
         elif job.error:
             lines.append(
@@ -237,6 +290,70 @@ def index_status(data_folder: str | None = None) -> str:
             lines.append(
                 f"[완료]    {name}  소요 {elapsed}초  총 {job.count}개 파일"
             )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def cancel_index(data_folder: str | None = None) -> str:
+    """진행 중인 인덱싱 작업을 취소합니다.
+
+    취소는 현재 처리 중인 파일이 완료되거나 timeout된 직후 적용됩니다.
+    이미 처리된 파일은 인덱스에 그대로 유지됩니다.
+
+    Args:
+        data_folder: 취소할 폴더 경로 (미지정 시 모든 진행 중인 작업을 취소)
+    """
+    with _index_jobs_lock:
+        if data_folder:
+            folder_key = str(Path(data_folder).resolve())
+            jobs = [(folder_key, _index_jobs[folder_key])] if folder_key in _index_jobs else []
+        else:
+            jobs = [(k, j) for k, j in _index_jobs.items() if j.thread.is_alive()]
+
+    if not jobs:
+        return "취소할 진행 중인 인덱싱 작업이 없습니다."
+
+    cancelled = []
+    for key, job in jobs:
+        if job.thread.is_alive() and not job.cancel_event.is_set():
+            job.cancel_event.set()
+            cancelled.append(Path(key).name)
+        elif job.cancel_event.is_set():
+            cancelled.append(f"{Path(key).name} (이미 취소 요청됨)")
+
+    if not cancelled:
+        return "취소할 진행 중인 인덱싱 작업이 없습니다."
+
+    names = ", ".join(cancelled)
+    return (
+        f"취소 요청 전송됨: {names}\n"
+        "현재 처리 중인 파일이 끝나면 중단됩니다. index_status()로 상태를 확인하세요."
+    )
+
+
+@mcp.tool()
+def cleanup_index(data_folder: str | None = None) -> str:
+    """디스크에 더 이상 존재하지 않는 파일의 인덱스 레코드를 삭제합니다.
+
+    폴더 이름을 변경하거나 파일을 삭제한 뒤 호출하면 DB의 고아 레코드를 정리할 수 있습니다.
+
+    Args:
+        data_folder: 정리할 폴더 경로 (지정 시 해당 폴더 하위 레코드만 검사, 미지정 시 DB 전체 검사)
+    """
+    from docpilot.db import indexer
+
+    try:
+        deleted = indexer.cleanup_orphans(folder=data_folder)
+    except Exception as e:
+        return f"정리 중 오류 발생: {e}"
+
+    if not deleted:
+        scope = data_folder or "전체 DB"
+        return f"삭제할 고아 레코드가 없습니다 ({scope})."
+
+    lines = [f"고아 레코드 {len(deleted)}개 삭제 완료:"]
+    for path in deleted:
+        lines.append(f"  · {path}")
     return "\n".join(lines)
 
 
