@@ -54,7 +54,7 @@ def generate_structure(
 
     prompt = _build_prompt(content, catalog, instructions)
     t0 = time.time()
-    raw = mapper.complete(prompt, max_tokens=2048)
+    raw = mapper.complete(prompt, max_tokens=4096)
     elapsed = time.time() - t0
 
     items = _parse(raw)
