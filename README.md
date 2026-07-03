@@ -75,7 +75,7 @@ pip install "docpilot[pdf,openai,morpheme,postgres]"   # 풀 스택
 |------|------|-------------|------|
 | [Tesseract](https://github.com/tesseract-ocr/tesseract) | PDF/이미지 OCR | `[pdf]` `[image]` | [설치 가이드](https://tesseract-ocr.github.io/tessdoc/Installation.html) |
 | [Poppler](https://poppler.freedesktop.org/) | PDF → 이미지 변환 | `[pdf]` | Windows: `winget install poppler` |
-| 한컴오피스 (한글) | HWP → HWPX 변환 (COM 자동화) | `[hwp]` | Windows 전용, 별도 라이선스 필요 |
+| 한컴오피스 (한글) | HWP → HWPX 변환, HWP/HWPX → DOCX 변환 (COM 자동화) | `[hwp]` | Windows 전용, 별도 라이선스 필요 |
 
 ## LLM 제공자
 
@@ -988,6 +988,7 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 | `generate_template` | 샘플 HWPX → 재사용 가능한 템플릿 생성 |
 | `estimate_cost` | 생성 전 API 토큰 비용 추정 |
 | `analyze_coverage` | 섹션별 데이터 커버리지 분석 — LOW 섹션은 LLM이 추론 작성할 가능성이 높음 |
+| `convert_document` | HWP/HWPX 파일을 한컴오피스 COM 자동화로 DOCX로 변환 (Windows + 한컴오피스 설치 환경 전용) |
 
 Claude 앱에서 자연어로 사용합니다.
 
@@ -1043,6 +1044,9 @@ cleanup_index로 /Users/me/old-data 폴더 고아 레코드 삭제해줘.
 
 # 데이터 커버리지 확인 (generate_document 전 권장)
 /Users/me/data 폴더가 report 템플릿 섹션을 얼마나 커버하는지 분석해줘.
+
+# HWP/HWPX → DOCX 변환
+/Users/me/Documents/보고서.hwpx 파일 docx로 변환해줘.
 ```
 
 #### search_documents 도구 파라미터

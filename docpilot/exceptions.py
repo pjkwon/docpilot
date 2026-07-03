@@ -22,6 +22,10 @@ class BuilderError(DocPilotError):
     """Raised when document generation fails."""
 
 
+class ConversionError(DocPilotError):
+    """Raised when a file format conversion fails."""
+
+
 class SearchError(DocPilotError):
     """Raised when a search or index operation fails."""
 

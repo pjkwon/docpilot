@@ -358,6 +358,37 @@ def cleanup_index(data_folder: str | None = None) -> str:
 
 
 @mcp.tool()
+def convert_document(source: str, output: str | None = None) -> str:
+    """HWP/HWPX 파일을 한컴오피스(한글) COM 자동화로 DOCX로 변환합니다.
+
+    Windows + 한컴오피스(한글)가 설치된 환경에서만 동작합니다.
+
+    Args:
+        source: 변환할 .hwp 또는 .hwpx 파일 경로
+        output: 출력 .docx 파일 경로 (미지정 시 source와 같은 폴더에 같은 이름으로 저장)
+    """
+    from docpilot.builder.hwp_convert import convert_to_docx
+    from docpilot.exceptions import DocPilotError
+
+    src = Path(source)
+    if not src.exists():
+        return f"파일을 찾을 수 없습니다: {source}"
+    if src.suffix.lower() not in (".hwp", ".hwpx"):
+        return f"지원하지 않는 입력 형식입니다: {src.suffix} (.hwp 또는 .hwpx만 가능)"
+
+    out = Path(output) if output else src.with_suffix(".docx")
+    if out.suffix.lower() != ".docx":
+        return f"출력 파일 확장자는 .docx여야 합니다: {out.suffix}"
+
+    try:
+        result = convert_to_docx(src, out)
+    except DocPilotError as e:
+        return f"변환 실패: {e}"
+
+    return f"DOCX 변환 완료: {result}"
+
+
+@mcp.tool()
 def search_documents(
     query: str,
     data_folder: str | None = None,
