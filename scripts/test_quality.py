@@ -1,7 +1,7 @@
 """
 HWP 변환 품질 측정 스크립트
 측정 항목: 구조 정확도(단락/표/셀/이미지/페이지), 텍스트 정확도, 처리 성능
-실행: uv run python test_quality.py
+실행: uv run python scripts/test_quality.py
 """
 from __future__ import annotations
 

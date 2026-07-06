@@ -1,6 +1,6 @@
 """
 오디오 파일 일괄 전사 스크립트
-실행: uv run python transcribe.py [입력폴더] [출력폴더]
+실행: uv run python scripts/transcribe.py [입력폴더] [출력폴더]
 기본값: 입력=data/  출력=output/transcripts/
 
 환경변수:

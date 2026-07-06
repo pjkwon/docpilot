@@ -1,7 +1,7 @@
 """
 data/ 폴더 안의 .hwp 파일을 실제로 인제스트해서 결과를 확인하는 수동 테스트 스크립트.
 변환된 .hwpx 파일은 output/ 폴더에 저장됩니다.
-실행: uv run python test_real.py
+실행: uv run python scripts/test_real.py
 """
 import contextlib
 import io

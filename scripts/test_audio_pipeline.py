@@ -1,6 +1,6 @@
 """
 오디오 전사 txt → 문서 생성 파이프라인 테스트
-실행: uv run python test_audio_pipeline.py [데이터폴더] [템플릿] [출력파일]
+실행: uv run python scripts/test_audio_pipeline.py [데이터폴더] [템플릿] [출력파일]
 
 기본값:
   데이터폴더  = output/transcripts/
