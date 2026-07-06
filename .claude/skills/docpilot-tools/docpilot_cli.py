@@ -2,7 +2,7 @@
 
 사용법:
     python docpilot_cli.py convert <source> [--output PATH]
-    python docpilot_cli.py generate --data FOLDER --template PATH_OR_NAME --output PATH
+    python docpilot_cli.py generate --data FOLDER --template PATH_OR_NAME [--output PATH]
                                      [--reindex] [--extra-instructions TEXT]
                                      [--instructions-doc PATH] [--top-k N]
 """
@@ -26,6 +26,22 @@ _DEFAULT_OUTPUT_EXT = {".hwp": ".docx", ".hwpx": ".docx", ".docx": ".hwpx"}
 # 알려진 이슈: 일부 한컴오피스 설치 환경에서 COM을 통한 DOCX 가져오기(Open)가 실패한다.
 # docpilot README의 "알려진 이슈" 참고. 원인 불명이라 보류 중.
 _KNOWN_UNSUPPORTED = {(".docx", ".hwpx")}
+
+
+def _default_generate_output(template: str) -> str:
+    """MCP generate_document의 _default_output()과 동일한 규칙: 미지정 시
+    ~/Documents/docpilot_YYYYMMDD_HHMMSS.<ext>에 저장 (ext는 템플릿이 .docx/.pdf면
+    그것을 따르고, 그 외(내장 템플릿 이름 포함)엔 .hwpx)."""
+    from datetime import datetime
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ext = ".hwpx"
+    tpl_ext = Path(template).suffix.lower()
+    if tpl_ext in (".docx", ".pdf"):
+        ext = tpl_ext
+    docs = Path.home() / "Documents"
+    docs.mkdir(exist_ok=True)
+    return str(docs / f"docpilot_{ts}{ext}")
 
 
 def cmd_convert(args: argparse.Namespace) -> int:
@@ -81,11 +97,15 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
     pilot = docpilot.DocPilot(llm="claude", api_key=api_key)
 
+    output = args.output or _default_generate_output(args.template)
+    if not args.output:
+        print(f"(output 미지정 — 기본 경로 사용: {output})")
+
     try:
         result = pilot.generate(
             data_folder=args.data,
             template=args.template,
-            output=args.output,
+            output=output,
             reindex=args.reindex,
             extra_instructions=args.extra_instructions,
             instructions_doc=args.instructions_doc,
@@ -115,7 +135,7 @@ def main() -> None:
     p_generate = sub.add_parser("generate", help="데이터 폴더 + 플레이스홀더 템플릿으로 문서 생성")
     p_generate.add_argument("--data", required=True, help="데이터 폴더 경로")
     p_generate.add_argument("--template", required=True, help="템플릿 파일 경로(.hwpx/.docx/.pdf) 또는 내장 템플릿 이름")
-    p_generate.add_argument("--output", required=True, help="출력 파일 경로")
+    p_generate.add_argument("--output", help="출력 파일 경로 (미지정 시 ~/Documents/docpilot_YYYYMMDD_HHMMSS.<ext>에 저장)")
     p_generate.add_argument("--reindex", action="store_true", help="데이터 폴더 강제 재인덱싱")
     p_generate.add_argument("--extra-instructions", default=None, help="추가 작성 지침 문자열")
     p_generate.add_argument("--instructions-doc", default=None, help="작성 지침으로 쓸 파일 경로 (RFP 등)")

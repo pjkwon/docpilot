@@ -56,12 +56,12 @@ description: docpilot 라이브러리를 이용한 문서 포맷 변환(hwp/hwpx
 데이터 폴더의 내용을 RAG로 검색해 템플릿의 `{{플레이스홀더}}`를 LLM으로 채운다.
 
 ```bash
-<python> <skill_dir>/docpilot_cli.py generate --data <데이터폴더> --template <템플릿경로또는이름> --output <출력경로> \
+<python> <skill_dir>/docpilot_cli.py generate --data <데이터폴더> --template <템플릿경로또는이름> [--output <출력경로>] \
     [--reindex] [--extra-instructions "지침"] [--instructions-doc <경로>] [--top-k 10]
 ```
 
 - `--template`: `.hwpx`/`.docx`/`.pdf` 파일 경로, 또는 내장 템플릿 이름(`report`/`gonmun`/`minutes`/`proposal`, 전부 HWPX)
-- `--output`: 확장자가 출력 형식을 결정 (`.hwpx`/`.docx`/`.pdf`). 템플릿이 `.docx`이고 `--output`이 `.hwpx`면 내부적으로 자동 변환 후 진행한다 (Windows + 한컴오피스 필요, 위 "미지원" 이슈가 있으면 여기서도 실패할 수 있음).
+- `--output`: 확장자가 출력 형식을 결정 (`.hwpx`/`.docx`/`.pdf`). 템플릿이 `.docx`이고 `--output`이 `.hwpx`면 내부적으로 자동 변환 후 진행한다 (Windows + 한컴오피스 필요, 위 "미지원" 이슈가 있으면 여기서도 실패할 수 있음). **생략 시** `~/Documents/docpilot_YYYYMMDD_HHMMSS.<ext>`에 저장 (ext는 템플릿이 `.docx`/`.pdf`면 그것을 따르고, 그 외(내장 템플릿 포함)는 `.hwpx`).
 - 템플릿에 `{{플레이스홀더}}`가 하나도 없으면 Reference Mode로 동작 — LLM이 문서 구조를 추론해서 임시 템플릿을 만든 뒤 생성한다.
 - 데이터 폴더는 매 호출 시 자동 인덱싱된다 (변경분만, `--reindex`로 강제 가능).
 - `--top-k`: RAG로 가져올 청크 수 (기본 10). 공문·회의록처럼 짧은 문서는 낮게(5 안팎), 보고서·제안서처럼 긴 문서는 높게(15~20) 설정.
