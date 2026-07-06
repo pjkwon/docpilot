@@ -34,6 +34,11 @@ description: docpilot 라이브러리를 이용한 문서 포맷 변환(hwp/hwpx
 
 없으면 셸에 이미 export된 OS 환경변수를 쓴다.
 
+**`convert`만 쓸 거면 `.env`/`ANTHROPIC_API_KEY` 없어도 된다 (실측 확인됨).**
+`docpilot_cli.py convert`도 내부적으로 `docpilot` 패키지를 import하므로 `load_dotenv()`는 똑같이 실행되지만,
+`.env`가 없으면 그냥 조용히 넘어갈 뿐이고 `convert_to_docx`/`convert_to_hwpx`는 LLM을 전혀 안 써서
+`ANTHROPIC_API_KEY`를 아예 참조하지 않는다. 아래 확인 절차는 **`generate`를 쓸 때만** 필요하다.
+
 **`generate` 실행 전 확인 순서:**
 1. 현재 작업 디렉터리(=사용자의 프로젝트 루트) 및 그 상위 디렉터리에 `.env` 파일이 있는지 확인.
 2. 없으면 OS 환경변수로 설정되어 있는지 확인 (`echo $ANTHROPIC_API_KEY` 등). 절대 값을 출력해서 사용자에게 보여주지 말 것 — 존재 여부만 확인.
