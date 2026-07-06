@@ -57,7 +57,7 @@ def _iter_blocks(doc):
             para = Paragraph(child, doc)
             text = para.text.strip()
             if text:
-                style = para.style.name if para.style else ""
+                style = (para.style.name or "") if para.style else ""
                 if style.startswith("Heading"):
                     yield f"[{text}]"
                 else:
