@@ -659,6 +659,11 @@ results = pilot.search("사업 계획", mode="exact")   # ILIKE 키워드만
 # 다른 임베딩 모델 사용 시
 from docpilot.search.embedding import bge_embed_fn
 pilot = DocPilot(embed_fn=bge_embed_fn())  # BGE-M3 (최고 품질, 2GB)
+
+# 하이라이팅 + 문서 단위 집계도 파라미터로 바로 사용 가능 (내부적으로 아래
+# "결과 하이라이팅"/"문서 단위 집계" 절의 함수들을 조합해서 실행)
+results = pilot.search("사업 계획", highlight=True)               # list[SearchResult], .highlights 채워짐
+docs    = pilot.search("사업 계획", group_by_doc=True)             # list[DocumentResult]로 반환 타입이 바뀜
 ```
 
 #### 저수준 API

@@ -575,6 +575,8 @@ class DocPilot:
         mode: str = "hybrid",
         filters=None,
         or_fallback: bool = True,
+        highlight: bool = False,
+        group_by_doc: bool = False,
     ):
         """
         Search indexed documents.
@@ -588,29 +590,45 @@ class DocPilot:
             ``SearchFilter`` instance for source/MIME/metadata/date constraints.
         or_fallback:
             For BM25/hybrid — retry with OR logic when AND returns no results.
+        highlight:
+            If True, populate each result's ``.highlights`` spans for *query* terms.
+            Render the marked-up text with ``docpilot.search.highlight.render(result)``.
+        group_by_doc:
+            If True, aggregate chunk-level results into per-document ``DocumentResult``
+            objects — returns ``list[DocumentResult]`` instead of ``list[SearchResult]``.
         """
         from docpilot.exceptions import SearchError
         from docpilot.search import exact, morpheme
 
         match mode:
             case "exact":
-                return exact.search(query, top_k=top_k, filters=filters)
+                results = exact.search(query, top_k=top_k, filters=filters)
             case "bm25":
-                return morpheme.search(query, top_k=top_k, or_fallback=or_fallback, filters=filters)
+                results = morpheme.search(query, top_k=top_k, or_fallback=or_fallback, filters=filters)
             case "vector":
                 if self._embed_fn is None:
                     raise SearchError("embed_fn required for vector mode")
                 from docpilot.search import embedding
-                return embedding.search(query, embed_fn=self._embed_fn, top_k=top_k, filters=filters)
+                results = embedding.search(query, embed_fn=self._embed_fn, top_k=top_k, filters=filters)
             case _:  # "hybrid"
                 from docpilot.search.hybrid import hybrid
-                return hybrid(
+                results = hybrid(
                     query,
                     embed_fn=self._embed_fn,
                     top_k=top_k,
                     filters=filters,
                     or_fallback=or_fallback,
                 )
+
+        if highlight:
+            from docpilot.search import highlight as highlight_fn
+            results = [highlight_fn(r, query) for r in results]
+
+        if group_by_doc:
+            from docpilot.search import group_by_document
+            return group_by_document(results, top_chunks=3, score="max")
+
+        return results
 
     def generate(
         self,
