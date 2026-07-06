@@ -357,35 +357,67 @@ def cleanup_index(data_folder: str | None = None) -> str:
     return "\n".join(lines)
 
 
+_CONVERSIONS = {
+    (".hwp", ".docx"): "docx",
+    (".hwpx", ".docx"): "docx",
+    (".hwp", ".hwpx"): "hwpx",
+}
+_DEFAULT_OUTPUT_EXT = {".hwp": ".docx", ".hwpx": ".docx", ".docx": ".hwpx"}
+
+# 알려진 이슈: 일부 한컴오피스 설치 환경에서 COM을 통한 DOCX 가져오기(Open) 자체가 실패한다.
+# 재현 확인됨(format 힌트·visible 모드·forceopen 옵션 무관하게 항상 실패). 원인 불명이라 보류 중.
+_KNOWN_UNSUPPORTED = {(".docx", ".hwpx")}
+
+
 @mcp.tool()
 def convert_document(source: str, output: str | None = None) -> str:
-    """HWP/HWPX 파일을 한컴오피스(한글) COM 자동화로 DOCX로 변환합니다.
+    """한컴오피스(한글) COM 자동화로 문서 포맷을 변환합니다.
 
+    지원 방향: .hwp/.hwpx → .docx, .hwp → .hwpx
     Windows + 한컴오피스(한글)가 설치된 환경에서만 동작합니다.
 
+    [알려진 이슈] .docx → .hwpx는 미지원입니다. 일부 한컴오피스 설치 환경에서
+    COM을 통한 DOCX 가져오기(Open) 자체가 실패하는 문제가 재현되어 보류 중입니다.
+    한/글에서 파일 > 열기로 수동으로 열어 다른 이름으로 저장(hwpx)하세요.
+
     Args:
-        source: 변환할 .hwp 또는 .hwpx 파일 경로
-        output: 출력 .docx 파일 경로 (미지정 시 source와 같은 폴더에 같은 이름으로 저장)
+        source: 변환할 .hwp, .hwpx 또는 .docx 파일 경로
+        output: 출력 파일 경로 (미지정 시 source와 같은 폴더에 기본 반대 포맷으로 저장 — .hwp/.hwpx는 .docx, .hwp는 .hwpx)
     """
-    from docpilot.builder.hwp_convert import convert_to_docx
+    from docpilot.builder.hwp_convert import convert_to_docx, convert_to_hwpx
     from docpilot.exceptions import DocPilotError
 
     src = Path(source)
     if not src.exists():
         return f"파일을 찾을 수 없습니다: {source}"
-    if src.suffix.lower() not in (".hwp", ".hwpx"):
-        return f"지원하지 않는 입력 형식입니다: {src.suffix} (.hwp 또는 .hwpx만 가능)"
 
-    out = Path(output) if output else src.with_suffix(".docx")
-    if out.suffix.lower() != ".docx":
-        return f"출력 파일 확장자는 .docx여야 합니다: {out.suffix}"
+    src_ext = src.suffix.lower()
+    if src_ext not in _DEFAULT_OUTPUT_EXT:
+        return f"지원하지 않는 입력 형식입니다: {src_ext} (.hwp, .hwpx, .docx만 가능)"
+
+    out = Path(output) if output else src.with_suffix(_DEFAULT_OUTPUT_EXT[src_ext])
+    out_ext = out.suffix.lower()
+
+    if (src_ext, out_ext) in _KNOWN_UNSUPPORTED:
+        return (
+            f"{src_ext} → {out_ext} 변환은 현재 지원하지 않습니다 (알려진 이슈).\n"
+            "일부 한컴오피스 설치 환경에서 COM을 통한 DOCX 가져오기(Open) 자체가 실패하는 "
+            "문제가 재현되어 보류 중입니다. 한/글에서 파일 > 열기로 수동으로 열어 "
+            "다른 이름으로 저장(hwpx)하세요."
+        )
+
+    target = _CONVERSIONS.get((src_ext, out_ext))
+    if target is None:
+        return f"지원하지 않는 변환입니다: {src_ext} → {out_ext}"
+
+    convert_fn, label = (convert_to_docx, "DOCX") if target == "docx" else (convert_to_hwpx, "HWPX")
 
     try:
-        result = convert_to_docx(src, out)
+        result = convert_fn(src, out)
     except DocPilotError as e:
         return f"변환 실패: {e}"
 
-    return f"DOCX 변환 완료: {result}"
+    return f"{label} 변환 완료: {result}"
 
 
 @mcp.tool()

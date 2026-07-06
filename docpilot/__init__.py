@@ -635,6 +635,14 @@ class DocPilot:
         template_path, _db_sections_meta = self._resolve_template(template)
         output_path = Path(output)
 
+        if template_path.suffix.lower() == ".docx" and output_path.suffix.lower() == ".hwpx":
+            from docpilot.builder.hwp_convert import convert_to_hwpx
+            _tmp = tempfile.NamedTemporaryFile(suffix=".hwpx", delete=False)
+            _tmp.close()
+            _tmp_path = Path(_tmp.name)
+            atexit.register(lambda p=_tmp_path: p.unlink(missing_ok=True))
+            template_path = convert_to_hwpx(template_path, _tmp_path)
+
         from docpilot.mapping.sidecar import load_sidecar
         _sidecar = load_sidecar(template_path)
         if _sidecar is not None and _sidecar.instructions:
@@ -681,7 +689,6 @@ class DocPilot:
                     "No {{placeholders}} found and LLM could not infer sections",
                     detail=str(template_path),
                 )
-            import tempfile
             from docpilot.mapping.base import TemplateSection
             from docpilot.template_generator.generator import (
                 _build_template,

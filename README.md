@@ -77,6 +77,18 @@ pip install "docpilot[pdf,openai,morpheme,postgres]"   # 풀 스택
 | [Poppler](https://poppler.freedesktop.org/) | PDF → 이미지 변환 | `[pdf]` | Windows: `winget install poppler` |
 | 한컴오피스 (한글) | HWP → HWPX 변환, HWP/HWPX → DOCX 변환 (COM 자동화) | `[hwp]` | Windows 전용, 별도 라이선스 필요 |
 
+### 알려진 이슈
+
+**DOCX → HWPX 변환 미지원.** `convert_to_hwpx()`(라이브러리) / `convert_document`(MCP)에 코드는 구현되어 있으나,
+일부 한컴오피스 설치 환경에서 COM을 통한 `hwp.Open(docx파일)` 자체가 실패하는 문제가 재현되어 보류 중입니다.
+`format` 힌트(자동/`OOXML`/`MSWORD`), `visible` 모드, `forceopen` 옵션을 바꿔봐도 동일하게 실패했고,
+같은 파일을 한글 GUI에서 파일 > 열기로 직접 열면 정상적으로 열립니다 — COM 자동화 경로에서만 발생하는 문제로 보이며 원인은 특정하지 못했습니다.
+
+- 라이브러리에서 `convert_to_hwpx()`를 DOCX 입력으로 호출하면 이 이슈에 대한 `UserWarning`이 뜨고 변환을 시도합니다 (환경에 따라 성공할 수도 있어 막지는 않음).
+- MCP `convert_document`는 `.docx → .hwpx` 요청을 시도 없이 즉시 미지원으로 응답합니다.
+- 우회: 한글에서 해당 docx를 직접 열어 "다른 이름으로 저장 → HWPX"로 수동 변환하세요.
+- HWP → HWPX, HWP/HWPX → DOCX는 이 이슈와 무관하며 정상 동작합니다.
+
 ## LLM 제공자
 
 docpilot은 5개 LLM 제공자를 지원합니다. `DocPilot(llm=...)` 또는 `DOCPILOT_LLM` 환경변수로 선택합니다.
@@ -988,7 +1000,7 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 | `generate_template` | 샘플 HWPX → 재사용 가능한 템플릿 생성 |
 | `estimate_cost` | 생성 전 API 토큰 비용 추정 |
 | `analyze_coverage` | 섹션별 데이터 커버리지 분석 — LOW 섹션은 LLM이 추론 작성할 가능성이 높음 |
-| `convert_document` | HWP/HWPX 파일을 한컴오피스 COM 자동화로 DOCX로 변환 (Windows + 한컴오피스 설치 환경 전용) |
+| `convert_document` | 한컴오피스 COM 자동화로 문서 포맷 변환. hwp/hwpx→docx, hwp→hwpx 지원 (Windows + 한컴오피스 설치 환경 전용). docx→hwpx는 미지원 — 아래 [알려진 이슈](#알려진-이슈) 참고 |
 
 Claude 앱에서 자연어로 사용합니다.
 
