@@ -510,7 +510,7 @@ record_id = pilot.save_template(
     path="학회참석보고서_템플릿.hwpx",
     description="학회·세미나 참석 후 제출하는 보고서",
     tags=["학회", "보고서"],
-    # auto_sections_meta=True (기본값): LLM이 섹션별 description/rule 자동 추론
+    # auto_sections_meta=True (기본값): LLM이 섹션별 description/rule 자동 추론 — API 호출 발생(과금됨)
 )
 
 # 이후 이름으로 바로 사용
@@ -521,7 +521,14 @@ result = pilot.generate(
 )
 ```
 
-`auto_sections_meta=True`(기본값)이면 저장 시 LLM이 각 플레이스홀더를 분석해 `description`·`rule`을 자동 추론합니다. 이 메타데이터는 이후 `generate()` 시 RAG 검색 품질과 LLM 작성 지침에 활용됩니다.
+> **[주의] `auto_sections_meta=True`(기본값)은 `save_template()`을 호출할 때마다 LLM API를 호출합니다 (과금됨).**
+> `sections_meta is None`이면 저장 시 LLM이 각 플레이스홀더를 분석해 `description`·`rule`을 자동 추론하고, 이 메타데이터는 이후 `generate()` 시 RAG 검색 품질과 LLM 작성 지침에 활용됩니다.
+> 이 호출이 일어날 때마다 `UserWarning`이 발생합니다. API 호출 없이 저장하려면:
+> ```python
+> pilot.save_template(..., auto_sections_meta=False)          # 메타데이터 없이 저장
+> pilot.save_template(..., sections_meta={"제목": {"description": "...", "rule": ""}})  # 직접 지정
+> ```
+> `generate_document`(MCP)에는 `save_template`이 노출되어 있지 않으므로, 이 비용은 라이브러리를 직접 호출할 때만 발생합니다.
 
 > `.docx`·`.pdf` 템플릿은 파일 경로를 직접 `generate(template=...)`에 전달하거나, 사이드카 JSON으로 메타데이터를 정의하세요.
 

@@ -818,8 +818,11 @@ class DocPilot:
         Extracts section0.xml and header.xml from the .hwpx ZIP into
         ~/.docpilot/templates/<name>/ for persistent access across sessions.
 
-        auto_sections_meta: if True and sections_meta is None, ask the LLM to
-            infer per-section description/rule for each placeholder.
+        auto_sections_meta: if True (default) and sections_meta is None, ask the LLM to
+            infer per-section description/rule for each placeholder — this makes a
+            billed API call every time save_template() is called without explicit
+            sections_meta. Pass auto_sections_meta=False or sections_meta={} to skip it
+            (a UserWarning is also raised when the automatic call is about to run).
 
         Returns the saved template record ID.
         """

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -31,7 +32,9 @@ def save(
     Persist a TemplateRecord and index it for search.
 
     sections_meta: per-section metadata dict {name: {description, rule, ...}}.
-    auto_sections_meta: if True and sections_meta is None, infer via LLM.
+    auto_sections_meta: if True (default) and sections_meta is None, infer via LLM —
+        this makes an API call (billed) every time save() runs without explicit
+        sections_meta. Pass auto_sections_meta=False or sections_meta={} to skip it.
     If a record for this path already exists, it is replaced.
     Returns the template record ID.
     """
@@ -39,6 +42,12 @@ def save(
 
     resolved_sections = sections_meta
     if resolved_sections is None and auto_sections_meta:
+        warnings.warn(
+            "save_template()/template_store.save(): auto_sections_meta=True (기본값)라서 "
+            "섹션 메타데이터를 LLM으로 자동 추론합니다 — API 호출이 발생하며 비용이 청구될 수 있습니다. "
+            "건너뛰려면 auto_sections_meta=False 또는 sections_meta={}를 전달하세요.",
+            stacklevel=2,
+        )
         try:
             resolved_sections = generate_sections_meta(path, mapper=mapper, model=model)
         except Exception:
