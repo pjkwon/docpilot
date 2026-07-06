@@ -24,25 +24,16 @@ description: docpilot 라이브러리를 이용한 문서 포맷 변환(hwp/hwpx
 <python> <skill_dir>/docpilot_cli.py <command> ...
 ```
 
-`generate` 서브커맨드는 `ANTHROPIC_API_KEY`가 필요하다 (실제 LLM API 호출 발생, 과금됨).
-`docpilot` 모듈 import 시점에 `load_dotenv()`가 자동 실행되는데, 이건 **CLI를 실행하는 시점의 현재 작업
-디렉터리(CWD)에서 시작해서 상위 폴더로 올라가며** `.env`를 찾는다 (실측 확인됨 — `docpilot` 소스 위치와는
-무관). Claude Code 계열 코드 에이전트는 세션 내내 사용자가 연 작업 폴더를 CWD로 유지하므로, 실질적으로는:
+## API 키 — `generate`에만 필요
 
-> **이 스킬을 쓰는 프로젝트(작업 폴더)의 루트에 `.env`를 두면 된다.** `docpilot` 레포 자체의 위치나
-> 이 스킬 폴더의 위치와는 무관하다 — 항상 "지금 작업 중인 프로젝트의 루트" 기준이다.
+`convert`는 LLM을 쓰지 않으므로 `ANTHROPIC_API_KEY`/`.env` 없이도 동작한다.
 
-없으면 셸에 이미 export된 OS 환경변수를 쓴다.
+`generate`는 `ANTHROPIC_API_KEY`가 필요하다 (실제 LLM API 호출 발생, 과금됨). 우선순위:
+1. CLI 실행 시점의 현재 작업 디렉터리(=사용자 프로젝트 루트)와 그 상위 폴더의 `.env` 파일 (`docpilot` import 시 자동 로드됨, `docpilot` 소스 위치와 무관 — CWD 기준)
+2. 셸에 이미 export된 OS 환경변수
 
-**`convert`만 쓸 거면 `.env`/`ANTHROPIC_API_KEY` 없어도 된다 (실측 확인됨).**
-`docpilot_cli.py convert`도 내부적으로 `docpilot` 패키지를 import하므로 `load_dotenv()`는 똑같이 실행되지만,
-`.env`가 없으면 그냥 조용히 넘어갈 뿐이고 `convert_to_docx`/`convert_to_hwpx`는 LLM을 전혀 안 써서
-`ANTHROPIC_API_KEY`를 아예 참조하지 않는다. 아래 확인 절차는 **`generate`를 쓸 때만** 필요하다.
-
-**`generate` 실행 전 확인 순서:**
-1. 현재 작업 디렉터리(=사용자의 프로젝트 루트) 및 그 상위 디렉터리에 `.env` 파일이 있는지 확인.
-2. 없으면 OS 환경변수로 설정되어 있는지 확인 (`echo $ANTHROPIC_API_KEY` 등). 절대 값을 출력해서 사용자에게 보여주지 말 것 — 존재 여부만 확인.
-3. 둘 다 없으면 **직접 `.env` 파일을 만들거나 키를 추측하지 말고**, 사용자에게 `ANTHROPIC_API_KEY`를 어떻게 설정할지 물어볼 것 (`.env` 파일에 추가할지, 셸에 export할지). 키 값 자체는 사용자만 알고 있어야 한다.
+`generate` 실행 전, `.env`와 OS 환경변수 둘 다 없으면 **직접 `.env`를 만들거나 키를 추측하지 말고** 사용자에게
+어떻게 설정할지 물어볼 것. 확인은 존재 여부만 하고 키 값 자체를 출력하지 말 것.
 
 ## 1. 문서 포맷 변환 — `convert`
 
@@ -70,15 +61,17 @@ description: docpilot 라이브러리를 이용한 문서 포맷 변환(hwp/hwpx
 ```
 
 - `--template`: `.hwpx`/`.docx`/`.pdf` 파일 경로, 또는 내장 템플릿 이름(`report`/`gonmun`/`minutes`/`proposal`, 전부 HWPX)
-- `--output`: 확장자가 출력 형식을 결정 (`.hwpx`/`.docx`/`.pdf`). 템플릿이 `.docx`이고 `--output`이 `.hwpx`면 내부적으로 자동 변환 후 진행한다 (단, 위 "미지원" 이슈가 있으면 여기서도 실패할 수 있음).
+- `--output`: 확장자가 출력 형식을 결정 (`.hwpx`/`.docx`/`.pdf`). 템플릿이 `.docx`이고 `--output`이 `.hwpx`면 내부적으로 자동 변환 후 진행한다 (Windows + 한컴오피스 필요, 위 "미지원" 이슈가 있으면 여기서도 실패할 수 있음).
 - 템플릿에 `{{플레이스홀더}}`가 하나도 없으면 Reference Mode로 동작 — LLM이 문서 구조를 추론해서 임시 템플릿을 만든 뒤 생성한다.
 - 데이터 폴더는 매 호출 시 자동 인덱싱된다 (변경분만, `--reindex`로 강제 가능).
+- `--top-k`: RAG로 가져올 청크 수 (기본 10). 공문·회의록처럼 짧은 문서는 낮게(5 안팎), 보고서·제안서처럼 긴 문서는 높게(15~20) 설정.
 
-출력 예시:
-```
-문서 생성 완료: C:\...\result.hwpx
-모델: claude-... | 입력 4,412 + 출력 1,560 토큰 | 26.4초
-```
+**⚠️ 인덱스가 프로젝트별로 분리되지 않는다.** `generate`는 기본적으로 `~/docpilot.db` 하나를 모든 프로젝트가
+공유하고, 검색도 방금 인덱싱한 `--data` 폴더로 제한되지 않는다 — RAG 검색이 이 DB에 지금까지 인덱싱된
+**모든** 문서를 대상으로 실행되므로, 다른 프로젝트에서 이 스킬로 인덱싱해둔 문서 내용이 이번 생성 결과에
+섞여 들어올 수 있다. 여러 프로젝트에서 이 스킬을 반복 사용한다면:
+- 프로젝트별로 `DOCPILOT_DATABASE_URL` 환경변수를 다르게 지정해 DB를 분리하거나,
+- 생성 결과에 낯선/무관한 내용이 섞여 있는지 사용자에게 확인을 권할 것.
 
 ## 주의사항
 
