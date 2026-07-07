@@ -596,29 +596,47 @@ class DocPilot:
         group_by_doc:
             If True, aggregate chunk-level results into per-document ``DocumentResult``
             objects — returns ``list[DocumentResult]`` instead of ``list[SearchResult]``.
+
+        "bm25"/"hybrid" modes fall back to "exact" and emit a ``UserWarning`` when
+        kiwipiepy isn't installed, instead of raising.
         """
+        import warnings
         from docpilot.exceptions import SearchError
         from docpilot.search import exact, morpheme
 
-        match mode:
-            case "exact":
-                results = exact.search(query, top_k=top_k, filters=filters)
-            case "bm25":
-                results = morpheme.search(query, top_k=top_k, or_fallback=or_fallback, filters=filters)
-            case "vector":
-                if self._embed_fn is None:
-                    raise SearchError("embed_fn required for vector mode")
-                from docpilot.search import embedding
-                results = embedding.search(query, embed_fn=self._embed_fn, top_k=top_k, filters=filters)
-            case _:  # "hybrid"
-                from docpilot.search.hybrid import hybrid
-                results = hybrid(
-                    query,
-                    embed_fn=self._embed_fn,
-                    top_k=top_k,
-                    filters=filters,
-                    or_fallback=or_fallback,
+        try:
+            match mode:
+                case "exact":
+                    results = exact.search(query, top_k=top_k, filters=filters)
+                case "bm25":
+                    results = morpheme.search(query, top_k=top_k, or_fallback=or_fallback, filters=filters)
+                case "vector":
+                    if self._embed_fn is None:
+                        raise SearchError(
+                            "vector 모드는 embed_fn 설정이 필요합니다",
+                            detail="DOCPILOT_EMBED 환경변수 또는 DocPilot(embed_fn=...) 설정을 확인하세요",
+                        )
+                    from docpilot.search import embedding
+                    results = embedding.search(query, embed_fn=self._embed_fn, top_k=top_k, filters=filters)
+                case _:  # "hybrid"
+                    from docpilot.search.hybrid import hybrid
+                    results = hybrid(
+                        query,
+                        embed_fn=self._embed_fn,
+                        top_k=top_k,
+                        filters=filters,
+                        or_fallback=or_fallback,
+                    )
+        except SearchError as e:
+            if mode in ("bm25", "hybrid") and "kiwipiepy" in str(e):
+                warnings.warn(
+                    f"kiwipiepy 미설치로 exact 검색으로 대체합니다 (형태소 검색을 쓰려면 "
+                    f'pip install "docpilot[morpheme]"): {e}',
+                    stacklevel=2,
                 )
+                results = exact.search(query, top_k=top_k, filters=filters)
+            else:
+                raise
 
         if highlight:
             from docpilot.search import highlight as highlight_fn

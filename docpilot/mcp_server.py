@@ -481,15 +481,9 @@ def search_documents(
                 folders = ", ".join(Path(k).name for k in running)
                 return f"인덱싱이 진행 중입니다 ({folders}). 잠시 후 다시 search_documents()를 호출하세요."
 
-    from datetime import datetime
-
-    from docpilot.search import (
-        SearchFilter,
-        group_by_document,
-        highlight as highlight_fn,
-    )
-    from docpilot.search import exact, morpheme
-    from docpilot.search.embedding import EmbedFn
+    import warnings
+    from docpilot.exceptions import SearchError
+    from docpilot.search import SearchFilter
 
     # 날짜 파싱
     after_dt = _parse_dt(created_after) if created_after else None
@@ -503,67 +497,45 @@ def search_documents(
         created_before=before_dt,
     ) if any([source_pattern, mime_type, metadata, after_dt, before_dt]) else None
 
-    # 검색 실행
-    pilot = _get_pilot()
+    # MCP 공개 이름(morpheme) → 라이브러리 내부 이름(bm25)
+    _MODE_MAP = {"exact": "exact", "morpheme": "bm25", "vector": "vector", "hybrid": "hybrid"}
     mode = mode.lower()
-
-    if mode == "exact":
-        results = exact.search(query, top_k=top_k, filters=filters)
-    elif mode == "morpheme":
-        try:
-            results = morpheme.search(query, top_k=top_k, or_fallback=True, filters=filters)
-        except Exception as e:
-            if "kiwipiepy" in str(e):
-                results = exact.search(query, top_k=top_k, filters=filters)
-                if not results:
-                    return (
-                        "검색 결과가 없습니다.\n"
-                        "[참고] kiwipiepy 미설치로 exact 검색으로 대체되었습니다. "
-                        "형태소 검색을 사용하려면: pip install \"docpilot[morpheme]\""
-                    )
-                highlight = False  # exact 결과엔 형태소 하이라이팅 불필요
-            else:
-                raise
-    elif mode == "vector":
-        if pilot._embed_fn is None:
-            return (
-                "vector 모드는 embed_fn 설정이 필요합니다. "
-                "DOCPILOT_EMBED 환경변수 또는 DocPilot(embed_fn=...) 설정을 확인하세요."
-            )
-        from docpilot.search import embedding as emb_mod
-        results = emb_mod.search(query, embed_fn=pilot._embed_fn, top_k=top_k, filters=filters)
-    elif mode == "hybrid":
-        from docpilot.search.hybrid import hybrid as hybrid_search
-        try:
-            results = hybrid_search(
-                query, embed_fn=pilot._embed_fn, top_k=top_k, filters=filters, or_fallback=True
-            )
-        except Exception as e:
-            if "kiwipiepy" in str(e):
-                results = exact.search(query, top_k=top_k, filters=filters)
-                if not results:
-                    return (
-                        "검색 결과가 없습니다.\n"
-                        "[참고] kiwipiepy 미설치로 exact 검색으로 대체되었습니다. "
-                        "형태소 검색을 사용하려면: pip install \"docpilot[morpheme]\""
-                    )
-                highlight = False
-            else:
-                raise
-    else:
+    lib_mode = _MODE_MAP.get(mode)
+    if lib_mode is None:
         return f"알 수 없는 mode: {mode!r}. 'hybrid' / 'morpheme' / 'exact' / 'vector' 중 선택하세요."
 
+    pilot = _get_pilot()
+
+    # 검색 실행 — DocPilot.search()가 kiwipiepy 미설치 시 exact로 자동 폴백하며
+    # UserWarning을 띄우므로, 여기서 그 경고를 감지해 사용자 안내 문구에 반영한다.
+    fell_back = False
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            results = pilot.search(
+                query,
+                mode=lib_mode,
+                top_k=top_k,
+                filters=filters,
+                or_fallback=True,
+                highlight=highlight,
+                group_by_doc=group_by_doc,
+            )
+        except SearchError as e:
+            return str(e)
+        fell_back = any("kiwipiepy" in str(w.message) for w in caught)
+
     if not results:
+        if fell_back:
+            return (
+                "검색 결과가 없습니다.\n"
+                "[참고] kiwipiepy 미설치로 exact 검색으로 대체되었습니다. "
+                "형태소 검색을 사용하려면: pip install \"docpilot[morpheme]\""
+            )
         return "검색 결과가 없습니다."
 
-    # 하이라이팅
-    if highlight:
-        results = [highlight_fn(r, query) for r in results]
-
-    # 문서 단위 집계
     if group_by_doc:
-        docs = group_by_document(results, top_chunks=3, score="max")
-        return _format_doc_results(docs, highlight)
+        return _format_doc_results(results, highlight)
 
     return _format_chunk_results(results, highlight, top_k)
 
