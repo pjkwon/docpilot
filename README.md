@@ -528,7 +528,7 @@ result = pilot.generate(
 > pilot.save_template(..., auto_sections_meta=False)          # 메타데이터 없이 저장
 > pilot.save_template(..., sections_meta={"제목": {"description": "...", "rule": ""}})  # 직접 지정
 > ```
-> `generate_document`(MCP)에는 `save_template`이 노출되어 있지 않으므로, 이 비용은 라이브러리를 직접 호출할 때만 발생합니다.
+> `save_template`은 MCP 서버에 노출되어 있지 않으므로, 이 비용은 라이브러리를 직접 호출할 때만 발생합니다.
 
 > `.docx`·`.pdf` 템플릿은 파일 경로를 직접 `generate(template=...)`에 전달하거나, 사이드카 JSON으로 메타데이터를 정의하세요.
 
@@ -637,7 +637,7 @@ pilot.generate(data_folder="./data", template="report",   output="./out.hwpx", t
 pilot.generate(data_folder="./data", template="proposal", output="./out.hwpx", top_k=20)
 ```
 
-MCP에서도 동일하게 `top_k` 파라미터를 `generate_document()` 툴에 전달할 수 있습니다.
+`top_k`는 라이브러리의 `pilot.generate()` 전용 파라미터입니다 — MCP 서버는 RAG 검색을 하지 않는 `fill_template` 흐름만 제공하므로 해당 파라미터가 없습니다.
 
 ### 개별 검색 API
 
@@ -1003,16 +1003,16 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 
 | 도구 | 설명 |
 |------|------|
-| `index` | 데이터 폴더를 검색 인덱스에 등록 (변경된 파일만 자동 재인덱싱). `files=`로 특정 파일만 지정 가능 |
-| `index_status` | 인덱싱 진행 상황 확인 — 경과 시간·처리 파일 수 실시간 조회 |
-| `cancel_index` | 진행 중인 인덱싱 취소 — 현재 처리 파일 완료 후 중단 |
-| `cleanup_index` | 디스크에 없는 파일의 고아 레코드 삭제 — 폴더 이름 변경·파일 삭제 후 사용 |
-| `search_documents` | 인덱싱된 문서 검색 (필터·하이라이팅·문서 단위 집계 지원) |
-| `generate_document` | 데이터 폴더 + 템플릿 → 문서 생성 (output 미지정 시 `~/Documents/docpilot_YYYYMMDD_HHMMSS.hwpx`) |
+| `describe_template` | 템플릿의 채움 구조 확인 — 정확한 섹션 키, 섹션별 규칙/설명, `fill_template`에 그대로 넘길 예시 dict 반환. LLM/RAG 호출 없이 즉시 반환 |
+| `fill_template` | 작성된 섹션 내용을 템플릿에 채워 문서 생성 (.hwpx/.docx/.pdf). LLM/RAG 호출 없이 순수 기계적으로 조립 (output 미지정 시 `~/Documents/docpilot_YYYYMMDD_HHMMSS.hwpx`) |
 | `generate_template` | 샘플 HWPX → 재사용 가능한 템플릿 생성 |
-| `estimate_cost` | 생성 전 API 토큰 비용 추정 |
-| `analyze_coverage` | 섹션별 데이터 커버리지 분석 — LOW 섹션은 LLM이 추론 작성할 가능성이 높음 |
 | `convert_document` | 한컴오피스 COM 자동화로 문서 포맷 변환. hwp/hwpx→docx, hwp→hwpx 지원 (Windows + 한컴오피스 설치 환경 전용). docx→hwpx는 미지원 — 아래 [알려진 이슈](#알려진-이슈) 참고 |
+
+> **[변경됨] MCP 서버에는 RAG/인덱싱 도구(`index`, `search_documents`, `generate_document`, `analyze_coverage`, `estimate_cost` 등)가 없습니다.**
+> 콘텐츠 작성(데이터 읽기·문장 구성)은 이 서버가 아니라 호출하는 에이전트(Claude)가 직접 수행하고,
+> MCP 서버는 `describe_template`으로 확인한 섹션 키에 맞춰 작성된 텍스트를 `fill_template`으로
+> 실제 문서 파일에 기계적으로 조립하는 역할만 합니다. 데이터 폴더 기반 RAG 자동 생성(`pilot.generate()`)과
+> 검색(`pilot.search()`)은 라이브러리를 직접 호출할 때만 사용할 수 있습니다.
 
 Claude 앱에서 자연어로 사용합니다.
 
@@ -1025,22 +1025,11 @@ Claude 앱에서 자연어로 사용합니다.
 # 툴 목록 확인 (처음 사용 시 권장)
 사용 가능한 docpilot 도구 목록 보여줘.
 
-# 폴더 인덱싱
-/Users/me/data 폴더 인덱싱해줘.
+# 템플릿 구조 확인 (문서 생성 전 첫 단계)
+report 템플릿에 어떤 섹션이 있는지 보여줘.
 
-# 기본 검색
-사업 계획 관련 문서 찾아줘.
-
-# 필터 검색 — HWPX 파일만, 기획팀 문서만
-reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아줘.
-(source_pattern: "reports/*.hwpx", metadata: {"dept": "기획"})
-
-# 문서 단위로 집계해서 상위 문서 보여줘
-사업 계획 관련 내용을 문서 단위로 묶어서 top 5 보여줘.
-(group_by_doc: true)
-
-# 내장 템플릿으로 문서 생성
-/Users/me/data 폴더 내용으로 report 템플릿 써서 보고서 만들어줘.
+# 데이터로 문서 생성 — Claude가 파일을 직접 읽고 섹션 내용을 작성한 뒤 fill_template 호출
+/Users/me/data 폴더 내용을 참고해서 report 템플릿으로 보고서 만들어줘.
 출력은 /Users/me/Documents/result.hwpx 로 저장해줘.
 
 # 커스텀 템플릿 사용
@@ -1051,73 +1040,14 @@ reports 폴더 안 hwpx 파일 중 기획팀 사업 계획 관련 내용 찾아�
 /Users/me/samples 폴더의 hwpx 파일들로 템플릿 만들어서
 /Users/me/templates/my_report.hwpx 로 저장해줘.
 
-# 인덱싱 상태 확인 (인덱싱이 오래 걸릴 때)
-인덱싱 상태 확인해줘.
-index_status로 /Users/me/data 폴더 인덱싱 얼마나 됐는지 봐줘.
-
-# 특정 파일만 인덱싱
-/Users/me/data 폴더에서 report.pdf, summary.hwpx 파일만 인덱싱해줘.
-
-# 인덱싱 취소 (무한 루프 등 문제 발생 시)
-인덱싱 취소해줘.
-cancel_index로 /Users/me/data 폴더 인덱싱 중단해줘.
-
-# 고아 레코드 정리 (폴더 이름 변경 또는 파일 삭제 후)
-인덱스 정리해줘.
-cleanup_index로 /Users/me/old-data 폴더 고아 레코드 삭제해줘.
-
-# 데이터 커버리지 확인 (generate_document 전 권장)
-/Users/me/data 폴더가 report 템플릿 섹션을 얼마나 커버하는지 분석해줘.
-
 # HWP/HWPX → DOCX 변환
 /Users/me/Documents/보고서.hwpx 파일 docx로 변환해줘.
 ```
 
-#### search_documents 도구 파라미터
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `query` | string | — | 검색 질의 |
-| `data_folder` | string | null | index()에 사용한 폴더 경로 — 인덱싱 완료 여부 확인용 (미지정 시 전체 잡 확인) |
-| `mode` | string | `"morpheme"` | `"exact"` / `"morpheme"` / `"vector"` |
-| `top_k` | int | 10 | 최대 반환 결과 수 |
-| `group_by_doc` | bool | false | true이면 문서 단위 집계 |
-| `highlight` | bool | true | 쿼리 텀 `**강조**` |
-| `source_pattern` | string | null | 파일 경로 glob (예: `"reports/*.hwpx"`) |
-| `mime_type` | string | null | MIME 타입 정확 일치 |
-| `metadata` | object | null | 문서 메타데이터 key-value 필터 |
-| `created_after` | string | null | 인덱싱 날짜 하한 (ISO 8601) |
-| `created_before` | string | null | 인덱싱 날짜 상한 (ISO 8601) |
-
-#### analyze_coverage 도구 파라미터
-
-섹션별 데이터 커버리지를 분석해 `generate_document()` 전에 LLM 추론 가능성을 미리 파악합니다.
-인덱싱 완료 후 호출하세요 (`index()` 또는 `generate_document()` 첫 호출 후).
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `data_folder` | string | — | 분석할 데이터 파일이 있는 폴더 경로 |
-| `template` | string | — | 템플릿 파일 경로 또는 내장 템플릿 이름 |
-| `top_k` | int | 3 | 섹션별 검색 결과 수 — 등급 기준값 (≥top_k → HIGH, 1~top_k-1 → MED, 0 → LOW) |
-
-결과 예시:
-```
-데이터 커버리지 분석
-  데이터 폴더: /Users/me/data
-  템플릿:     report  (인덱싱 문서 3개)
-  총 10개 섹션 — HIGH 6 | MED 2 | LOW 2
-
-섹션별 커버리지
-──────────────────────────────────────────────────
-[HIGH] 보고서 제목                3청크  score 0.0312
-[MED ] 결론                      1청크  score 0.0165
-[LOW ] 표 삽입 위치              0청크
-
-[권고] LOW 섹션 2개 — LLM이 내용을 추론할 가능성이 높습니다.
-  LOW 섹션: 표 삽입 위치, 작성일
-  · 해당 내용이 포함된 파일을 데이터 폴더에 추가하거나
-  · LLM이 추론 작성하도록 허용하고 generate() 후 문서를 직접 검토하세요.
-```
+> `describe_template`/`fill_template`은 LLM API를 호출하지 않습니다 — 데이터를 읽고 섹션 내용을
+> 작성하는 것은 Claude 앱 자신의 추론이며, docpilot MCP 서버는 그 결과를 문서 파일로 조립만 합니다.
+> 따라서 위 "데이터로 문서 생성" 같은 요청의 실제 작성 품질은 Claude 앱이 데이터 폴더를 얼마나
+> 잘 읽고 요약하는지에 달려 있습니다 (RAG 검색으로 관련 청크만 추리는 라이브러리 `pilot.generate()`와의 차이점).
 
 ### 환경변수
 
@@ -1171,7 +1101,7 @@ print(report)
   출력 $15.00/1M  →  $0.0375
 ```
 
-MCP 서버에서는 `estimate_cost` 도구로 동일하게 사용할 수 있습니다. MCP 서버 기본 설정(`DOCPILOT_LLM=claude`)이라면 Claude 앱에서 "비용 예상해줘"라고 자연어로 요청해도 정상 동작합니다. 제한이 생기는 건 `DOCPILOT_LLM`을 OpenAI · Gemini 등 다른 제공자로 바꿨을 때만입니다.
+`estimate_cost`는 라이브러리 전용 API입니다 — MCP 서버는 RAG 호출이 없는 `describe_template`/`fill_template` 흐름만 제공하므로 이 도구는 MCP에 노출되어 있지 않습니다.
 
 ## 예외 처리
 

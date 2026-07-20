@@ -1,12 +1,15 @@
 """
-MCP 서버 통합 테스트 — 실제 LLM 호출 포함
-ANTHROPIC_API_KEY 환경변수가 설정된 경우에만 실행됩니다.
+MCP 서버 통합 테스트 — describe_template / fill_template 흐름.
+generate_template 관련 테스트만 실제 LLM 호출을 포함합니다 (ANTHROPIC_API_KEY 필요).
 
 실행 방법:
-    ANTHROPIC_API_KEY=sk-ant-... pytest tests/test_mcp_server.py -v -s
+    pytest tests/test_mcp_server.py -v                                     # describe/fill (LLM 불필요)
+    ANTHROPIC_API_KEY=sk-ant-... pytest tests/test_mcp_server.py -v -s     # generate_template 포함 전체
 """
 from __future__ import annotations
 
+import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -61,31 +64,6 @@ def _make_hwpx(path: Path, hml: bytes) -> Path:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
-def data_folder(tmp_path: Path) -> Path:
-    folder = tmp_path / "data"
-    folder.mkdir()
-    (folder / "사업계획.txt").write_text(
-        "2026년 사업 계획서\n\n"
-        "목표: 신규 고객 500사 확보, 매출 50억 달성\n\n"
-        "전략 1: 클라우드 SaaS 전환\n"
-        "기존 온프레미스 제품을 SaaS로 전환하여 초기 도입 장벽을 낮춘다.\n\n"
-        "전략 2: 파트너 채널 확대\n"
-        "국내 SI 파트너 20사와 리셀러 계약을 체결한다.\n\n"
-        "예산: 개발 20억, 마케팅 10억, 운영 5억",
-        encoding="utf-8",
-    )
-    (folder / "시장분석.txt").write_text(
-        "국내 문서 자동화 시장 분석\n\n"
-        "시장 규모: 2026년 기준 약 3,000억 원\n"
-        "주요 경쟁사: A사 (점유율 35%), B사 (점유율 20%)\n\n"
-        "기회 요인: 공공기관 디지털 전환 수요 급증\n"
-        "위협 요인: 글로벌 AI 문서 도구 국내 진출",
-        encoding="utf-8",
-    )
-    return folder
-
-
-@pytest.fixture()
 def samples_folder(tmp_path: Path) -> Path:
     folder = tmp_path / "samples"
     folder.mkdir()
@@ -100,13 +78,13 @@ def placeholder_template(samples_folder: Path) -> Path:
 
 @pytest.fixture()
 def reference_template(samples_folder: Path) -> Path:
-    """placeholder 없는 기존 보고서 HWPX (Reference Mode용)"""
+    """placeholder 없는 기존 보고서 HWPX (generate_template 샘플용)"""
     return _make_hwpx(samples_folder / "reference_report.hwpx", _REFERENCE_HML)
 
 
 @pytest.fixture()
 def mcp_pilot(tmp_path: Path, monkeypatch):
-    """각 테스트마다 격리된 DB로 _pilot을 교체."""
+    """generate_template처럼 _get_pilot()을 쓰는 도구용 — 각 테스트마다 격리된 DB로 _pilot을 교체."""
     from docpilot import DocPilot
     pilot = DocPilot(database_url=f"sqlite:///{tmp_path / 'mcp_test.db'}")
     monkeypatch.setattr("docpilot.mcp_server._pilot", pilot)
@@ -114,50 +92,49 @@ def mcp_pilot(tmp_path: Path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# TC-01: 내장 템플릿으로 보고서 생성
+# TC-01: describe_template — 템플릿 구조 확인 (LLM/RAG 불필요)
 # ---------------------------------------------------------------------------
 
-@requires_llm
-def test_tc01_generate_builtin_template(data_folder, tmp_path, mcp_pilot):
-    """data_folder + 내장 'report' 템플릿 → HWPX 파일 생성 확인."""
-    from docpilot.mcp_server import generate
+def test_tc01a_describe_builtin_template():
+    """describe_template('report')가 섹션 목록과 fill_template용 example dict를 반환해야 합니다."""
+    from docpilot.mcp_server import describe_template
 
-    output = tmp_path / "output" / "report.hwpx"
-    output.parent.mkdir()
+    result = describe_template("report")
 
-    result = generate(
-        data_folder=str(data_folder),
-        template="report",
-        output=str(output),
-    )
+    assert "[섹션 목록]" in result
+    assert "[fill_template()의 sections 인자에 그대로 채워 넣을 예시]" in result
 
-    assert output.exists(), "출력 파일이 생성되어야 합니다"
-    assert output.stat().st_size > 0, "빈 파일이 아니어야 합니다"
-    assert "문서 생성 완료" in result
+
+def test_tc01b_describe_placeholder_template(placeholder_template):
+    """{{개요}} 등 실제 placeholder 이름이 섹션 키로 정확히 노출되어야 합니다."""
+    from docpilot.mcp_server import describe_template
+
+    result = describe_template(str(placeholder_template))
+
+    for name in ("개요", "주요성과", "향후계획"):
+        assert f'"{name}"' in result
 
 
 # ---------------------------------------------------------------------------
-# TC-02a: Placeholder 있는 HWPX 템플릿으로 보고서 생성
+# TC-02: fill_template — 작성된 섹션 내용을 기계적으로 채우기 (LLM/RAG 불필요)
 # ---------------------------------------------------------------------------
 
-@requires_llm
-def test_tc02a_generate_placeholder_template(data_folder, placeholder_template, tmp_path, mcp_pilot):
-    """{{placeholder}} 있는 HWPX 템플릿 → 섹션이 채워진 보고서 생성."""
-    from docpilot.mcp_server import generate
+def test_tc02a_fill_placeholder_template(placeholder_template, tmp_path):
+    """{{placeholder}} 있는 HWPX 템플릿 → sections dict로 치환, 남는 placeholder 없어야 함."""
+    from docpilot.mcp_server import fill_template
 
     output = tmp_path / "output" / "report_placeholder.hwpx"
     output.parent.mkdir()
 
-    result = generate(
-        data_folder=str(data_folder),
+    result = fill_template(
         template=str(placeholder_template),
+        sections={"개요": "본 보고서는 4분기 현황을 정리한 것입니다.", "주요성과": "신규 고객 확보", "향후계획": "채널 확대"},
         output=str(output),
     )
 
     assert output.exists()
     assert "문서 생성 완료" in result
 
-    # 출력 HWPX에 placeholder 문자열이 남아있지 않아야 함
     with zipfile.ZipFile(output) as zf:
         names = zf.namelist()
         hml_name = next(n for n in names if n.endswith(".hml"))
@@ -165,32 +142,40 @@ def test_tc02a_generate_placeholder_template(data_folder, placeholder_template, 
     assert "{{" not in content, "placeholder가 치환되지 않고 남아있습니다"
 
 
-# ---------------------------------------------------------------------------
-# TC-02b: Placeholder 없는 HWPX — Reference Mode
-# ---------------------------------------------------------------------------
+def test_tc02b_fill_template_missing_required_key(placeholder_template, tmp_path):
+    """필수 섹션 키가 빠지면 문서를 만들지 않고 오류를 반환해야 합니다."""
+    from docpilot.mcp_server import fill_template
 
-@requires_llm
-def test_tc02b_generate_reference_mode(data_folder, reference_template, tmp_path, mcp_pilot):
-    """placeholder 없는 기존 보고서 → Reference Mode로 구조 분석 후 새 보고서 생성."""
-    from docpilot.mcp_server import generate
+    output = tmp_path / "output" / "should_not_exist.hwpx"
 
-    output = tmp_path / "output" / "report_reference.hwpx"
-    output.parent.mkdir()
-
-    result = generate(
-        data_folder=str(data_folder),
-        template=str(reference_template),
+    result = fill_template(
+        template=str(placeholder_template),
+        sections={"개요": "내용"},  # 주요성과, 향후계획 누락
         output=str(output),
     )
 
-    assert output.exists()
-    assert "문서 생성 완료" in result
-    # Reference Mode는 원본 파일과 다른 내용으로 채워져야 함
-    assert output.stat().st_size != reference_template.stat().st_size
+    assert "문서 생성 실패" in result
+    assert not output.exists()
+
+
+def test_tc02c_fill_template_unknown_key(placeholder_template, tmp_path):
+    """템플릿에 없는 키(오탈자)가 섞여 있으면 오류를 반환해야 합니다."""
+    from docpilot.mcp_server import fill_template
+
+    output = tmp_path / "output" / "should_not_exist.hwpx"
+
+    result = fill_template(
+        template=str(placeholder_template),
+        sections={"개요": "내용", "주요성과": "내용", "향후계획": "내용", "오탈자섹션": "내용"},
+        output=str(output),
+    )
+
+    assert "문서 생성 실패" in result
+    assert not output.exists()
 
 
 # ---------------------------------------------------------------------------
-# TC-03: 템플릿 자동 생성 (generate_template) → DB 등록 → 재사용
+# TC-03: 템플릿 자동 생성 (generate_template) → describe/fill로 재사용
 # ---------------------------------------------------------------------------
 
 @requires_llm
@@ -213,9 +198,9 @@ def test_tc03a_generate_template_created(reference_template, samples_folder, tmp
 
 
 @requires_llm
-def test_tc03b_generated_template_reusable(data_folder, reference_template, samples_folder, tmp_path, mcp_pilot):
-    """generate_template으로 만든 템플릿을 generate에 바로 재사용할 수 있어야 합니다."""
-    from docpilot.mcp_server import generate, generate_template
+def test_tc03b_generated_template_reusable(reference_template, samples_folder, tmp_path, mcp_pilot):
+    """generate_template으로 만든 템플릿을 describe_template → fill_template로 재사용할 수 있어야 합니다."""
+    from docpilot.mcp_server import describe_template, fill_template, generate_template
 
     sample2 = _make_hwpx(samples_folder / "reference_report2.hwpx", _REFERENCE_HML)
     out_template = tmp_path / "templates" / "auto_generated.hwpx"
@@ -225,75 +210,54 @@ def test_tc03b_generated_template_reusable(data_folder, reference_template, samp
         output=str(out_template),
     )
 
+    desc = describe_template(str(out_template))
+    match = re.search(r"\[fill_template.*?\]\n(\{.*\})", desc, re.S)
+    assert match, "describe_template 출력에 example dict가 포함되어야 합니다"
+    example = json.loads(match.group(1))
+
     output = tmp_path / "output" / "reused.hwpx"
     output.parent.mkdir()
-    result = generate(
-        data_folder=str(data_folder),
-        template=str(out_template),
-        output=str(output),
-    )
+    result = fill_template(template=str(out_template), sections=example, output=str(output))
 
     assert output.exists()
     assert "문서 생성 완료" in result
 
 
 # ---------------------------------------------------------------------------
-# TC-04: 출력 파일 식별성 — 다른 경로로 두 번 생성
+# TC-04: 출력 파일 식별성 — 같은 템플릿·섹션, 다른 output 경로 (LLM/RAG 불필요)
 # ---------------------------------------------------------------------------
 
-@requires_llm
-def test_tc04_output_files_distinct(data_folder, tmp_path, mcp_pilot):
-    """같은 데이터·템플릿, 다른 output 경로 → 두 파일 모두 존재하고 서로 독립적이어야 합니다."""
-    from docpilot.mcp_server import generate
+def test_tc04_output_files_distinct(placeholder_template, tmp_path):
+    """다른 output 경로로 두 번 호출하면 두 파일 모두 존재하고 서로 독립적이어야 합니다."""
+    from docpilot.mcp_server import fill_template
 
     out_dir = tmp_path / "output"
     out_dir.mkdir()
     output_a = out_dir / "report_A.hwpx"
     output_b = out_dir / "report_B.hwpx"
+    sections = {"개요": "개요 내용", "주요성과": "성과 내용", "향후계획": "계획 내용"}
 
-    generate(data_folder=str(data_folder), template="report", output=str(output_a))
-    generate(data_folder=str(data_folder), template="report", output=str(output_b))
+    fill_template(template=str(placeholder_template), sections=sections, output=str(output_a))
+    fill_template(template=str(placeholder_template), sections=sections, output=str(output_b))
 
     assert output_a.exists() and output_b.exists(), "두 파일 모두 존재해야 합니다"
     assert output_a.resolve() != output_b.resolve(), "경로가 달라야 합니다"
 
 
 # ---------------------------------------------------------------------------
-# TC-05: data 폴더 내 특정 .hwpx 파일을 template으로 직접 지정
+# TC-05: index 도구 — 파일 변경 시 자동 재인덱싱 (RAG 인덱싱은 라이브러리 레벨 기능, LLM 불필요)
 # ---------------------------------------------------------------------------
 
-@requires_llm
-def test_tc05_data_file_as_template(data_folder, tmp_path, mcp_pilot):
-    """data 폴더 안의 특정 .hwpx 파일을 template으로 지정해 보고서를 생성합니다."""
-    from docpilot.mcp_server import generate
-
-    # data 폴더에 양식 파일 추가
-    ref_in_data = _make_hwpx(data_folder / "양식.hwpx", _REFERENCE_HML)
-
-    output = tmp_path / "output" / "from_data_template.hwpx"
-    output.parent.mkdir()
-
-    result = generate(
-        data_folder=str(data_folder),
-        template=str(ref_in_data),
-        output=str(output),
-    )
-
-    assert output.exists()
-    assert "문서 생성 완료" in result
-
-
-# ---------------------------------------------------------------------------
-# TC-06: index 도구 — 파일 변경 시 자동 재인덱싱
-# ---------------------------------------------------------------------------
-
-def test_tc06_index_auto_reindex_on_change(data_folder, tmp_path, mcp_pilot):
-    """파일 내용 변경 시 index() 재호출로 자동 재인덱싱되어야 합니다. (LLM 불필요)"""
+def test_tc05_index_auto_reindex_on_change(tmp_path):
+    """파일 내용 변경 시 index() 재호출로 자동 재인덱싱되어야 합니다."""
     from docpilot.db import indexer
     from docpilot.db.schema import Document
     from docpilot.db import client
 
+    data_folder = tmp_path / "data"
+    data_folder.mkdir()
     txt = data_folder / "사업계획.txt"
+    txt.write_text("2026년 사업 계획서\n\n목표: 신규 고객 500사 확보", encoding="utf-8")
     original_hash = indexer._compute_hash(txt)
 
     # 1차 인덱싱

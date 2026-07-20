@@ -528,6 +528,273 @@ def _infer_sections_from_content(content: str, mapper) -> list[str]:
     return []
 
 
+def _sidecar_source(template: str | Path) -> Path:
+    """
+    Path to resolve sidecar.json against.
+
+    Built-in templates are resolved to a temp-assembled HWPX copy for actual reading/
+    building (see _assemble_builtin_hwpx), but their sidecar.json lives in the original
+    templates/<name>/ directory — so sidecar lookup must use *template*, not the resolved
+    template_path, or it silently finds nothing.
+    """
+    path = Path(template)
+    if path.exists():
+        return path
+    if (_BUILTIN_TEMPLATES / str(template)).is_dir():
+        return _BUILTIN_TEMPLATES / str(template)
+    return path
+
+
+def _resolve_template_path(template: str | Path, embed_fn=None) -> tuple[Path, dict]:
+    """Return (template_path, sections_meta). sections_meta is non-empty only for DB templates."""
+    path = Path(template)
+    if path.exists():
+        return path, {}
+
+    name = str(template)
+    if (_BUILTIN_TEMPLATES / name).is_dir():
+        return _assemble_builtin_hwpx(name), {}
+
+    for ext in (".hwpx", ".docx", ".pdf"):
+        candidate = _BUILTIN_TEMPLATES / f"{template}{ext}"
+        if candidate.exists():
+            return candidate, {}
+        local = Path("templates") / f"{template}{ext}"
+        if local.exists():
+            return local, {}
+
+    # DB lookup by name
+    try:
+        from docpilot.db import template_store
+        records = template_store.search(name, embed_fn=embed_fn, top_k=1, fallback=False)
+        if records:
+            record = records[0]
+            section_xml_path = Path(record.path)
+            if section_xml_path.exists():
+                from docpilot.builder.hwpx_dynamic_builder import pack_hwpx
+                _base_header = _BUILTIN_TEMPLATES / "base" / "Contents" / "header.xml"
+                header = (
+                    Path(record.header_xml)
+                    if record.header_xml and Path(record.header_xml).exists()
+                    else _base_header
+                )
+                tmp = tempfile.NamedTemporaryFile(suffix=".hwpx", delete=False)
+                tmp.close()
+                tmp_hwpx = Path(tmp.name)
+                atexit.register(lambda p=tmp_hwpx: p.unlink(missing_ok=True))
+                pack_hwpx(header, section_xml_path.read_text(encoding="utf-8"), tmp_hwpx)
+                sections_meta = (record.metadata_ or {}).get("sections", {})
+                return tmp_hwpx, sections_meta
+    except Exception:
+        pass
+
+    raise DocPilotError("Template not found", detail=str(template))
+
+
+def _resolve_builder(output: Path):
+    from docpilot.builder import HwpxBuilder, PdfBuilder, DocxBuilder
+
+    match output.suffix.lower():
+        case ".hwpx":
+            return HwpxBuilder()
+        case ".pdf":
+            return PdfBuilder()
+        case ".docx":
+            return DocxBuilder()
+        case _:
+            raise BuilderError(
+                f"Unsupported output format '{output.suffix}'",
+                detail="Supported: .hwpx, .pdf, .docx",
+            )
+
+
+def _merge_section_meta(sections: list, template_path: Path, sidecar, db_sections_meta: dict) -> list:
+    """Apply sidecar.json rules, DB sections_meta, and template style hints onto *sections* in place."""
+    if sidecar is not None and sidecar.sections:
+        _sc_map = {s.name: s for s in sidecar.sections}
+        for _sec in sections:
+            _sc = _sc_map.get(_sec.name)
+            if _sc is None:
+                continue
+            if not _sec.description and _sc.description:
+                _sec.description = _sc.description
+            if not _sec.rule and _sc.rule:
+                _sec.rule = _sc.rule
+            if not _sec.style_hint and _sc.style_hint:
+                _sec.style_hint = _sc.style_hint
+            if _sc.is_list:
+                _sec.is_list = True
+            if _sc.optional:
+                _sec.optional = True
+            if _sc.group_max > 0 and _sec.group_max == 0:
+                _sec.group_max = _sc.group_max
+
+    if db_sections_meta:
+        for _sec in sections:
+            _dm = db_sections_meta.get(_sec.name, {})
+            if not _dm:
+                continue
+            if not _sec.description and _dm.get("description"):
+                _sec.description = _dm["description"]
+            if not _sec.rule and _dm.get("rule"):
+                _sec.rule = _dm["rule"]
+            if not _sec.style_hint and _dm.get("style_hint"):
+                _sec.style_hint = _dm["style_hint"]
+            if not _sec.is_list and _dm.get("is_list"):
+                _sec.is_list = True
+            if not _sec.optional and _dm.get("optional"):
+                _sec.optional = True
+            if _sec.group_max == 0 and _dm.get("group_max", 0) > 0:
+                _sec.group_max = _dm["group_max"]
+
+    style_hints: dict[str, str] = {}
+    _tpl_ext = template_path.suffix.lower()
+    if _tpl_ext == ".hwpx":
+        from docpilot.builder.hwpx_analyzer import extract_style_hints
+        style_hints = extract_style_hints(template_path)
+    elif _tpl_ext == ".docx":
+        from docpilot.builder.docx_analyzer import extract_style_hints
+        style_hints = extract_style_hints(template_path)
+
+    for s in sections:
+        if s.style_hint:
+            continue
+        if s.is_list:
+            for candidate in [f"{s.name}1", s.name]:
+                hint = style_hints.get(candidate, "")
+                if hint:
+                    s.style_hint = hint
+                    break
+        else:
+            s.style_hint = style_hints.get(s.name, "")
+
+    return sections
+
+
+def _resolve_sections(
+    template: str | Path,
+    template_path: Path,
+    db_sections_meta: dict,
+) -> tuple[list, str]:
+    """
+    Extract + merge section metadata for a template — no LLM/RAG call.
+
+    template:      the original name/path passed by the caller — used to locate sidecar.json,
+                    since built-in templates resolve to a temp-assembled file (see _sidecar_source).
+    template_path: the resolved, readable template file (from _resolve_template_path).
+
+    Raises DocPilotError if the template has no {{placeholders}}; reference-mode
+    LLM inference (for marker-less documents) is only available via DocPilot.generate().
+    """
+    sections = _extract_placeholder_sections(template_path)
+    if not sections:
+        raise DocPilotError(
+            "템플릿에서 {{placeholder}}를 찾을 수 없습니다.",
+            detail=(
+                f"{template_path} — 플레이스홀더가 없는 참조 문서는 generate_template()으로 "
+                "먼저 템플릿을 만드세요."
+            ),
+        )
+    from docpilot.mapping.sidecar import load_sidecar
+    sidecar = load_sidecar(_sidecar_source(template))
+    sections = _merge_section_meta(sections, template_path, sidecar, db_sections_meta)
+    instructions = sidecar.instructions if sidecar is not None else ""
+    return sections, instructions
+
+
+def describe_template(template: str | Path) -> dict:
+    """
+    Return a template's fillable structure — no LLM/RAG call.
+
+    Use this before fill_template() to see exact section keys, per-section rules/
+    descriptions, and a ready-to-copy example dict shape.
+    """
+    template_path, db_sections_meta = _resolve_template_path(template)
+    sections, instructions = _resolve_sections(template, template_path, db_sections_meta)
+
+    example: dict[str, str | list[str]] = {}
+    for s in sections:
+        if s.is_list:
+            example[s.name] = ["항목1", "항목2"]
+        elif s.optional:
+            example[s.name] = ""
+        else:
+            example[s.name] = "..."
+
+    return {
+        "template": str(template_path),
+        "instructions": instructions,
+        "sections": [
+            {
+                "name": s.name,
+                "description": s.description,
+                "rule": s.rule,
+                "style_hint": s.style_hint,
+                "optional": s.optional,
+                "is_list": s.is_list,
+                "group_max": s.group_max,
+            }
+            for s in sections
+        ],
+        "example": example,
+    }
+
+
+def fill_template(
+    template: str | Path,
+    sections: dict[str, str | list[str]],
+    output: str | Path,
+) -> Path:
+    """
+    Fill an already-authored section dict into a template — pure mechanical build,
+    no LLM/RAG call. Validates keys against the template's actual placeholders first,
+    and warns if any placeholder is left unfilled in the output.
+    """
+    template_path, db_sections_meta = _resolve_template_path(template)
+    resolved, _ = _resolve_sections(template, template_path, db_sections_meta)
+    resolved_names = {s.name for s in resolved}
+
+    required_missing = [
+        s.name for s in resolved
+        if not s.optional and not s.is_list and not str(sections.get(s.name, "")).strip()
+    ]
+    unknown_keys = [k for k in sections if k not in resolved_names]
+    if required_missing or unknown_keys:
+        detail_lines = []
+        if required_missing:
+            detail_lines.append(f"누락된 필수 섹션: {', '.join(required_missing)}")
+        if unknown_keys:
+            detail_lines.append(f"템플릿에 없는 키 (오탈자 의심): {', '.join(unknown_keys)}")
+        raise MappingError(
+            "fill_template 입력 검증 실패 — describe_template()으로 정확한 섹션 키를 확인하세요.",
+            detail="\n".join(detail_lines),
+        )
+
+    fill: dict[str, str | list[str]] = {}
+    for s in resolved:
+        val = sections.get(s.name, [] if s.is_list else "")
+        if s.is_list and isinstance(val, str):
+            val = [v.strip() for v in val.split("\n") if v.strip()]
+        fill[s.name] = val
+
+    output_path = Path(output)
+    builder = _resolve_builder(output_path)
+    out_path = builder.build(template_path, fill, output_path)
+
+    if out_path.suffix.lower() == ".hwpx":
+        _validate_hwpx(out_path)
+
+    leftover = _extract_placeholders(out_path)
+    if leftover:
+        import warnings
+        warnings.warn(
+            f"생성된 문서에 채워지지 않은 플레이스홀더가 남아 있습니다: {', '.join(leftover)}",
+            stacklevel=2,
+        )
+
+    return out_path
+
+
 class DocPilot:
     """
     Main entry point for docpilot.
@@ -680,7 +947,7 @@ class DocPilot:
             template_path = convert_to_hwpx(template_path, _tmp_path)
 
         from docpilot.mapping.sidecar import load_sidecar
-        _sidecar = load_sidecar(template_path)
+        _sidecar = load_sidecar(_sidecar_source(template))
         if _sidecar is not None and _sidecar.instructions:
             extra_instructions = (
                 f"{_sidecar.instructions}\n\n{extra_instructions}"
@@ -747,68 +1014,11 @@ class DocPilot:
             template_path = tmp_tpl
             sections = [TemplateSection(name=s) for s in placeholder_names]
 
-        if _sidecar is not None and _sidecar.sections:
-            _sc_map = {s.name: s for s in _sidecar.sections}
-            for _sec in sections:
-                _sc = _sc_map.get(_sec.name)
-                if _sc is None:
-                    continue
-                if not _sec.description and _sc.description:
-                    _sec.description = _sc.description
-                if not _sec.rule and _sc.rule:
-                    _sec.rule = _sc.rule
-                if not _sec.style_hint and _sc.style_hint:
-                    _sec.style_hint = _sc.style_hint
-                if _sc.is_list:
-                    _sec.is_list = True
-                if _sc.optional:
-                    _sec.optional = True
-                if _sc.group_max > 0 and _sec.group_max == 0:
-                    _sec.group_max = _sc.group_max
+        sections = _merge_section_meta(sections, template_path, _sidecar, _db_sections_meta)
 
-        # DB sections_meta as fallback (lower priority than sidecar)
-        if _db_sections_meta:
-            for _sec in sections:
-                _dm = _db_sections_meta.get(_sec.name, {})
-                if not _dm:
-                    continue
-                if not _sec.description and _dm.get("description"):
-                    _sec.description = _dm["description"]
-                if not _sec.rule and _dm.get("rule"):
-                    _sec.rule = _dm["rule"]
-                if not _sec.style_hint and _dm.get("style_hint"):
-                    _sec.style_hint = _dm["style_hint"]
-                if not _sec.is_list and _dm.get("is_list"):
-                    _sec.is_list = True
-                if not _sec.optional and _dm.get("optional"):
-                    _sec.optional = True
-                if _sec.group_max == 0 and _dm.get("group_max", 0) > 0:
-                    _sec.group_max = _dm["group_max"]
-
-        style_hints: dict[str, str] = {}
-        _tpl_ext = template_path.suffix.lower()
-        if _tpl_ext == ".hwpx":
-            from docpilot.builder.hwpx_analyzer import extract_style_hints
-            style_hints = extract_style_hints(template_path)
-        elif _tpl_ext == ".docx":
-            from docpilot.builder.docx_analyzer import extract_style_hints
-            style_hints = extract_style_hints(template_path)
-
-        # Attach style hints: for list groups use the first numbered variant's hint
-        for s in sections:
-            if s.style_hint:
-                continue
-            if s.is_list:
-                # Try hint from first key e.g. "단어1" for base "단어"
-                for candidate in [f"{s.name}1", s.name]:
-                    hint = style_hints.get(candidate, "")
-                    if hint:
-                        s.style_hint = hint
-                        break
-            else:
-                s.style_hint = style_hints.get(s.name, "")
-
-        mapping_result = self._rag_mapper.map(sections, instructions=extra_instructions, top_k=top_k)
+        from docpilot.search.models import SearchFilter
+        filters = SearchFilter(source_pattern=f"{Path(data_folder).resolve()}{os.sep}*")
+        mapping_result = self._rag_mapper.map(sections, instructions=extra_instructions, top_k=top_k, filters=filters)
 
         builder = self._build_builder(output_path)
         out_path = builder.build(template_path, mapping_result.sections, output_path)
@@ -924,7 +1134,7 @@ class DocPilot:
             )
 
         from docpilot.mapping.sidecar import load_sidecar
-        _sidecar = load_sidecar(template_path)
+        _sidecar = load_sidecar(_sidecar_source(template))
         if _sidecar is not None and _sidecar.sections:
             _sc_map = {s.name: s for s in _sidecar.sections}
             for _sec in sections:
@@ -1022,49 +1232,7 @@ class DocPilot:
 
     def _resolve_template(self, template: str | Path) -> tuple[Path, dict]:
         """Return (template_path, sections_meta). sections_meta is non-empty only for DB templates."""
-        path = Path(template)
-        if path.exists():
-            return path, {}
-
-        name = str(template)
-        if (_BUILTIN_TEMPLATES / name).is_dir():
-            return _assemble_builtin_hwpx(name), {}
-
-        for ext in (".hwpx", ".docx", ".pdf"):
-            candidate = _BUILTIN_TEMPLATES / f"{template}{ext}"
-            if candidate.exists():
-                return candidate, {}
-            local = Path("templates") / f"{template}{ext}"
-            if local.exists():
-                return local, {}
-
-        # DB lookup by name
-        try:
-            from docpilot.db import template_store
-            records = template_store.search(name, embed_fn=self._embed_fn, top_k=1, fallback=False)
-            if records:
-                record = records[0]
-                section_xml_path = Path(record.path)
-                if section_xml_path.exists():
-                    from docpilot.builder.hwpx_dynamic_builder import pack_hwpx
-                    _base_header = _BUILTIN_TEMPLATES / "base" / "Contents" / "header.xml"
-                    header = (
-                        Path(record.header_xml)
-                        if record.header_xml and Path(record.header_xml).exists()
-                        else _base_header
-                    )
-                    import tempfile
-                    tmp = tempfile.NamedTemporaryFile(suffix=".hwpx", delete=False)
-                    tmp.close()
-                    tmp_hwpx = Path(tmp.name)
-                    atexit.register(lambda p=tmp_hwpx: p.unlink(missing_ok=True))
-                    pack_hwpx(header, section_xml_path.read_text(encoding="utf-8"), tmp_hwpx)
-                    sections_meta = (record.metadata_ or {}).get("sections", {})
-                    return tmp_hwpx, sections_meta
-        except Exception:
-            pass
-
-        raise DocPilotError("Template not found", detail=str(template))
+        return _resolve_template_path(template, self._embed_fn)
 
     @staticmethod
     def list_templates() -> dict[str, str]:
@@ -1134,17 +1302,4 @@ class DocPilot:
 
     @staticmethod
     def _build_builder(output: Path):
-        from docpilot.builder import HwpxBuilder, PdfBuilder, DocxBuilder
-
-        match output.suffix.lower():
-            case ".hwpx":
-                return HwpxBuilder()
-            case ".pdf":
-                return PdfBuilder()
-            case ".docx":
-                return DocxBuilder()
-            case _:
-                raise BuilderError(
-                    f"Unsupported output format '{output.suffix}'",
-                    detail="Supported: .hwpx, .pdf, .docx",
-                )
+        return _resolve_builder(output)

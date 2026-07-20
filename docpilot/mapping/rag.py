@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from docpilot.mapping.base import BaseLLMMapper, MappingResult, TemplateSection
-from docpilot.search.models import SearchResult
+from docpilot.search.models import SearchFilter, SearchResult
 
 if TYPE_CHECKING:
     from docpilot.ingestion.models import IngestedDocument
@@ -41,15 +41,31 @@ class RagMapper:
     def complete(self, prompt: str, max_tokens: int = 2048) -> str:
         return self._mapper.complete(prompt, max_tokens)
 
-    def map(self, sections: list[TemplateSection], instructions: str | None = None, top_k: int | None = None) -> MappingResult:
-        content = self.retrieve_content(sections, top_k=top_k)
+    def map(
+        self,
+        sections: list[TemplateSection],
+        instructions: str | None = None,
+        top_k: int | None = None,
+        filters: SearchFilter | None = None,
+    ) -> MappingResult:
+        content = self.retrieve_content(sections, top_k=top_k, filters=filters)
         return self._mapper.map(content, sections, instructions)
 
-    def retrieve_content(self, sections: list[TemplateSection], top_k: int | None = None) -> str:
+    def retrieve_content(
+        self,
+        sections: list[TemplateSection],
+        top_k: int | None = None,
+        filters: SearchFilter | None = None,
+    ) -> str:
         """Retrieve and assemble relevant chunks for the given sections."""
-        return _assemble(self._retrieve(sections, top_k=top_k))
+        return _assemble(self._retrieve(sections, top_k=top_k, filters=filters))
 
-    def _retrieve(self, sections: list[TemplateSection], top_k: int | None = None) -> list[SearchResult]:
+    def _retrieve(
+        self,
+        sections: list[TemplateSection],
+        top_k: int | None = None,
+        filters: SearchFilter | None = None,
+    ) -> list[SearchResult]:
         query = _build_query(sections)
         effective_top_k = top_k if top_k is not None else self._top_k
         # Fetch more candidates when reranking so the reranker has room to reorder
@@ -62,20 +78,20 @@ class RagMapper:
             # Hybrid: morpheme AND + vector in parallel, merged via RRF
             from docpilot.search import embedding as emb_search
             try:
-                morph_results = mor_search.search(query, top_k=candidate_k, or_fallback=False)
+                morph_results = mor_search.search(query, top_k=candidate_k, or_fallback=False, filters=filters)
             except SearchError:
                 morph_results = []
-            vec_results = emb_search.search(query, self._embed_fn, top_k=candidate_k)
+            vec_results = emb_search.search(query, self._embed_fn, top_k=candidate_k, filters=filters)
             results = _rrf_merge(morph_results, vec_results, top_k=candidate_k)
             if not results:
                 # Both empty → OR as last resort
                 try:
-                    results = mor_search.search(query, top_k=candidate_k, or_fallback=True)
+                    results = mor_search.search(query, top_k=candidate_k, or_fallback=True, filters=filters)
                 except SearchError:
                     return []
         else:
             try:
-                results = mor_search.search(query, top_k=candidate_k, or_fallback=True)
+                results = mor_search.search(query, top_k=candidate_k, or_fallback=True, filters=filters)
             except SearchError:
                 return []
 

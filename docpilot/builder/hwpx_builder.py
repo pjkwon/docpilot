@@ -1,20 +1,25 @@
 from __future__ import annotations
 
 import copy
-import re
-import shutil
 import tempfile
 import zipfile
 from pathlib import Path
 
 from docpilot.builder.base import BaseBuilder, PLACEHOLDER_RE
+from docpilot.builder.html_blocks import (
+    HtmlListBlock,
+    HtmlTableBlock,
+    MarkdownTableBlock,
+    PlainTextBlock,
+    flatten_list,
+    segment_blocks,
+)
+from docpilot.builder.html_table import build_hwpx_table_from_cells, build_markdown_table, parse_html_table
+from docpilot.builder.hwpx_bullets import ensure_bullet, ensure_bullet_para_pr, get_or_create_bullets_container
 from docpilot.exceptions import BuilderError
 
 # Candidate content file paths inside the HWPX ZIP (tried in order)
 _CONTENT_CANDIDATES = ["Contents/content.hml", "Contents/section0.xml"]
-
-_MD_TABLE_ROW_RE = re.compile(r"^\|.+\|$")
-_MD_TABLE_SEP_RE = re.compile(r"^\|[\s:|\\-]+\|$")
 
 
 class HwpxBuilder(BaseBuilder):
@@ -51,7 +56,14 @@ class HwpxBuilder(BaseBuilder):
             tree = etree.parse(str(content_file))
             root = tree.getroot()
 
-            _replace_placeholders(root, sections)
+            # header.xml carries bullet/numbering definitions — only present
+            # for the section0.xml-schema templates, never for the minimal
+            # content.hml schema. Lists degrade to glyph-prefixed text when absent.
+            header_file = tmp_path / "Contents" / "header.xml"
+            header_tree = etree.parse(str(header_file)) if header_file.exists() else None
+            header_root = header_tree.getroot() if header_tree is not None else None
+
+            header_dirty = _replace_placeholders(root, sections, header_root=header_root)
 
             tree.write(
                 str(content_file),
@@ -59,6 +71,14 @@ class HwpxBuilder(BaseBuilder):
                 encoding="UTF-8",
                 pretty_print=False,
             )
+
+            if header_dirty and header_tree is not None:
+                header_tree.write(
+                    str(header_file),
+                    xml_declaration=True,
+                    encoding="UTF-8",
+                    pretty_print=False,
+                )
 
             _pack(tmp_path, output)
 
@@ -88,25 +108,6 @@ def _pack(src: Path, output: Path) -> None:
             zf.write(file, file.relative_to(src))
 
 
-def _is_markdown_table(text: str) -> bool:
-    lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
-    if len(lines) < 2:
-        return False
-    return sum(1 for l in lines if _MD_TABLE_ROW_RE.match(l)) >= 2
-
-
-def _parse_markdown_table(text: str) -> list[list[str]]:
-    rows = []
-    for line in text.strip().split("\n"):
-        line = line.strip()
-        if not line or _MD_TABLE_SEP_RE.match(line):
-            continue
-        if _MD_TABLE_ROW_RE.match(line):
-            cells = [c.strip() for c in line[1:-1].split("|")]
-            rows.append(cells)
-    return rows
-
-
 def _read_horz_size(root, hp_ns: str, default: int = 42520) -> int:
     hp = f"{{{hp_ns}}}"
     for ls in root.iter(f"{hp}lineseg"):
@@ -116,157 +117,62 @@ def _read_horz_size(root, hp_ns: str, default: int = 42520) -> int:
     return default
 
 
-def _build_hwpx_table(
-    rows: list[list[str]],
-    hp_ns: str,
-    horz_size: int,
-    next_id: int,
-) -> tuple:
-    """Build an hp:tbl element from parsed markdown table rows.
-    Returns (tbl_element, next_id_after).
-    """
+def _clear_lineseg(para, hp_linesegarray: str, hp_lineseg: str) -> None:
+    """lineseg 자식을 제거해 HWP가 열 때 레이아웃을 재계산하도록 한다."""
+    lsa = para.find(hp_linesegarray)
+    if lsa is None:
+        return
+    for ls in list(lsa.findall(hp_lineseg)):
+        lsa.remove(ls)
+
+
+def _make_text_para(template_para, text: str, hp_t: str, hp_linesegarray: str, hp_lineseg: str,
+                     new_id: int, para_pr_id: int | None = None):
+    new_p = copy.deepcopy(template_para)
+    new_p.set("id", str(new_id))
+    if para_pr_id is not None:
+        new_p.set("paraPrIDRef", str(para_pr_id))
+    t_elements = new_p.findall(f".//{hp_t}")
+    if t_elements:
+        t_elements[0].text = text
+        for el in t_elements[1:]:
+            el.text = ""
+    _clear_lineseg(new_p, hp_linesegarray, hp_lineseg)
+    return new_p
+
+
+def _make_table_para(template_para, tbl_elem, hp_t: str, hp_linesegarray: str, hp_lineseg: str, new_id: int):
     from lxml import etree
 
-    hp = f"{{{hp_ns}}}"
-    n_cols = max(len(row) for row in rows) if rows else 1
-    cell_margin_h = 510
-    cell_margin_v = 141
-    row_height = 282  # HWP default minimum; HWP auto-expands as needed
-
-    if n_cols == 2:
-        col_widths = [int(horz_size * 0.25), horz_size - int(horz_size * 0.25)]
-    else:
-        col_w = horz_size // n_cols
-        col_widths = [col_w] * (n_cols - 1) + [horz_size - col_w * (n_cols - 1)]
-
-    total_height = row_height * len(rows)
-
-    tbl = etree.Element(f"{hp}tbl", {
-        "id": str(next_id),
-        "zOrder": "0",
-        "numberingType": "TABLE",
-        "textWrap": "TOP_AND_BOTTOM",
-        "textFlow": "BOTH_SIDES",
-        "lock": "0",
-        "dropcapstyle": "None",
-        "pageBreak": "CELL",
-        "repeatHeader": "1",
-        "rowCnt": str(len(rows)),
-        "colCnt": str(n_cols),
-        "cellSpacing": "0",
-        "borderFillIDRef": "3",
-        "noAdjust": "0",
-    })
-    next_id += 1
-
-    etree.SubElement(tbl, f"{hp}sz", {
-        "width": str(horz_size),
-        "widthRelTo": "ABSOLUTE",
-        "height": str(total_height),
-        "heightRelTo": "ABSOLUTE",
-        "protect": "0",
-    })
-    etree.SubElement(tbl, f"{hp}pos", {
-        "treatAsChar": "0",
-        "affectLSpacing": "0",
-        "flowWithText": "1",
-        "allowOverlap": "0",
-        "holdAnchorAndSO": "0",
-        "vertRelTo": "PARA",
-        "horzRelTo": "COLUMN",
-        "vertAlign": "TOP",
-        "horzAlign": "LEFT",
-        "vertOffset": "0",
-        "horzOffset": "0",
-    })
-    etree.SubElement(tbl, f"{hp}outMargin", {"left": "283", "right": "283", "top": "283", "bottom": "283"})
-    etree.SubElement(tbl, f"{hp}inMargin", {"left": "510", "right": "510", "top": "141", "bottom": "141"})
-
-    for row_idx, row in enumerate(rows):
-        cells = row + [""] * (n_cols - len(row))
-        tr = etree.SubElement(tbl, f"{hp}tr")
-
-        for col_idx, cell_text in enumerate(cells):
-            cell_w = col_widths[col_idx]
-            text_w = cell_w - cell_margin_h * 2
-
-            tc = etree.SubElement(tr, f"{hp}tc", {
-                "name": "",
-                "header": "0",
-                "hasMargin": "0",
-                "protect": "0",
-                "editable": "0",
-                "dirty": "0",
-                "borderFillIDRef": "3",
-            })
-
-            # subList comes FIRST inside tc (HWP schema requirement)
-            sub_list = etree.SubElement(tc, f"{hp}subList", {
-                "id": "",
-                "textDirection": "HORIZONTAL",
-                "lineWrap": "BREAK",
-                "vertAlign": "CENTER",
-                "linkListIDRef": "0",
-                "linkListNextIDRef": "0",
-                "textWidth": "0",
-                "textHeight": "0",
-                "hasTextRef": "0",
-                "hasNumRef": "0",
-            })
-
-            p = etree.SubElement(sub_list, f"{hp}p", {
-                "id": "0",
-                "paraPrIDRef": "0",
-                "styleIDRef": "0",
-                "pageBreak": "0",
-                "columnBreak": "0",
-                "merged": "0",
-            })
-
-            run = etree.SubElement(p, f"{hp}run", {"charPrIDRef": "0"})
-            if cell_text:
-                t = etree.SubElement(run, f"{hp}t")
-                t.text = cell_text
-
-            lsa = etree.SubElement(p, f"{hp}linesegarray")
-            etree.SubElement(lsa, f"{hp}lineseg", {
-                "textpos": "0",
-                "vertpos": "0",
-                "vertsize": "1000",
-                "textheight": "1000",
-                "baseline": "850",
-                "spacing": "600",
-                "horzpos": "0",
-                "horzsize": str(text_w),
-                "flags": "393216",
-            })
-
-            # Cell metadata after subList
-            etree.SubElement(tc, f"{hp}cellAddr", {
-                "colAddr": str(col_idx),
-                "rowAddr": str(row_idx),
-            })
-            etree.SubElement(tc, f"{hp}cellSpan", {"colSpan": "1", "rowSpan": "1"})
-            etree.SubElement(tc, f"{hp}cellSz", {
-                "width": str(cell_w),
-                "height": str(row_height),
-            })
-            etree.SubElement(tc, f"{hp}cellMargin", {
-                "left": str(cell_margin_h),
-                "right": str(cell_margin_h),
-                "top": str(cell_margin_v),
-                "bottom": str(cell_margin_v),
-            })
-
-    return tbl, next_id
+    new_p = copy.deepcopy(template_para)
+    new_p.set("id", str(new_id))
+    t_elements = new_p.findall(f".//{hp_t}")
+    run = t_elements[0].getparent() if t_elements else None
+    if run is not None:
+        # Clear text from all t elements but keep one empty <hp:t/>
+        # (HWP requires <hp:t/> sibling after <hp:tbl> in the same run)
+        for t_el in t_elements[1:]:
+            run.remove(t_el)
+        t_elements[0].text = None
+        run.insert(0, tbl_elem)
+    lsa = new_p.find(hp_linesegarray)
+    if lsa is not None:
+        for ls in list(lsa.findall(hp_lineseg)):
+            lsa.remove(ls)
+        etree.SubElement(lsa, hp_lineseg, {
+            "textpos": "0", "vertpos": "0",
+            "vertsize": "1000", "textheight": "1000",
+            "baseline": "850", "spacing": "600",
+            "horzpos": "0", "horzsize": "0", "flags": "393216",
+        })
+    return new_p
 
 
-def _replace_placeholders(root, sections: dict[str, str | list[str]]) -> None:
+def _replace_placeholders(root, sections: dict[str, str | list[str]], header_root=None) -> bool:
     # Detect hp namespace from document root (supports both 2011 and 2012 variants)
     hp_ns = root.nsmap.get("hp", "http://www.hancom.co.kr/hwpml/2012/paragraph")
     hp_t = f"{{{hp_ns}}}t"
     hp_p = f"{{{hp_ns}}}p"
-    hp_run = f"{{{hp_ns}}}run"
     hp_linesegarray = f"{{{hp_ns}}}linesegarray"
     hp_lineseg = f"{{{hp_ns}}}lineseg"
 
@@ -275,6 +181,11 @@ def _replace_placeholders(root, sections: dict[str, str | list[str]]) -> None:
     # Collect all existing IDs so generated IDs never collide
     existing_ids = {int(el.get("id", 0)) for el in root.iter(hp_p) if el.get("id")}
     next_id = max(existing_ids, default=2_000_000_000) + 1
+
+    header_dirty = False
+    bullets_el = None
+    bullet_id_cache: dict[str, int] = {}
+    para_pr_id_cache: dict[tuple[int, int], int] = {}
 
     for para in list(root.iter(hp_p)):
         t_elements = para.findall(f".//{hp_t}")
@@ -294,81 +205,97 @@ def _replace_placeholders(root, sections: dict[str, str | list[str]]) -> None:
         fill = "\n".join(val) if isinstance(val, list) else val
         replaced = PLACEHOLDER_RE.sub(fill, full_text, count=1)
 
-        # Markdown table → real HWPX table element
-        if _is_markdown_table(replaced):
-            rows = _parse_markdown_table(replaced)
-            if rows:
-                tbl_elem, next_id = _build_hwpx_table(
-                    rows, hp_ns, horz_size, next_id
-                )
-                run = t_elements[0].getparent()
-                if run is not None:
-                    # Clear text from all t elements but keep one empty <hp:t/>
-                    # (HWP requires <hp:t/> sibling after <hp:tbl> in the same run)
-                    for t_el in t_elements[1:]:
-                        run.remove(t_el)
-                    t_elements[0].text = None
-                    run.insert(0, tbl_elem)
-                    # Restore a minimal lineseg on the outer paragraph
-                    lsa = para.find(hp_linesegarray)
-                    if lsa is not None:
-                        for ls in list(lsa.findall(hp_lineseg)):
-                            lsa.remove(ls)
-                        from lxml import etree as _etree
-                        _etree.SubElement(lsa, hp_lineseg, {
-                            "textpos": "0", "vertpos": "0",
-                            "vertsize": "1000", "textheight": "1000",
-                            "baseline": "850", "spacing": "600",
-                            "horzpos": "0", "horzsize": "0", "flags": "393216",
-                        })
-                else:
-                    t_elements[0].text = " | ".join(
-                        " | ".join(c for c in row) for row in rows
-                    )
+        blocks = segment_blocks(replaced)
+        has_structure = any(not isinstance(b, PlainTextBlock) for b in blocks)
+
+        if not has_structure:
+            # No HTML table/list or markdown table found — exact legacy
+            # single-line / multiline behavior, unchanged.
+            lines = replaced.split("\n")
+
+            if len(lines) == 1:
+                t_elements[0].text = lines[0]
+                for el in t_elements[1:]:
+                    el.text = ""
+                _clear_lineseg(para, hp_linesegarray, hp_lineseg)
+                continue
+
+            parent = para.getparent()
+            if parent is None:
+                t_elements[0].text = " ".join(lines)
+                for el in t_elements[1:]:
+                    el.text = ""
+                _clear_lineseg(para, hp_linesegarray, hp_lineseg)
+                continue
+
+            idx = list(parent).index(para)
+            new_paras = []
+            for line in lines:
+                new_paras.append(_make_text_para(para, line, hp_t, hp_linesegarray, hp_lineseg, next_id))
+                next_id += 1
+            parent.remove(para)
+            for j, new_p in enumerate(new_paras):
+                parent.insert(idx + j, new_p)
             continue
 
-        lines = replaced.split("\n")
-
-        if len(lines) == 1:
-            t_elements[0].text = lines[0]
-            for el in t_elements[1:]:
-                el.text = ""
-            _clear_lineseg(para, hp_linesegarray, hp_lineseg)
-            continue
-
-        # Multiline: expand into one <hp:p> per line
+        # Heterogeneous block sequence (HTML table(s)/list(s) mixed with text)
         parent = para.getparent()
         if parent is None:
-            t_elements[0].text = " ".join(lines)
+            flat_lines: list[str] = []
+            for block in blocks:
+                if isinstance(block, PlainTextBlock):
+                    flat_lines.extend(block.lines)
+            t_elements[0].text = " ".join(flat_lines)
             for el in t_elements[1:]:
                 el.text = ""
             _clear_lineseg(para, hp_linesegarray, hp_lineseg)
             continue
 
         idx = list(parent).index(para)
+        new_elements = []
 
-        new_paras = []
-        for line in lines:
-            new_p = copy.deepcopy(para)
-            new_p.set("id", str(next_id))
-            next_id += 1
-            new_t_elements = new_p.findall(f".//{hp_t}")
-            if new_t_elements:
-                new_t_elements[0].text = line
-                for el in new_t_elements[1:]:
-                    el.text = ""
-            _clear_lineseg(new_p, hp_linesegarray, hp_lineseg)
-            new_paras.append(new_p)
+        for block in blocks:
+            if isinstance(block, PlainTextBlock):
+                for line in block.lines:
+                    new_elements.append(_make_text_para(para, line, hp_t, hp_linesegarray, hp_lineseg, next_id))
+                    next_id += 1
+
+            elif isinstance(block, MarkdownTableBlock):
+                if block.rows:
+                    tbl_elem, next_id = build_markdown_table(block.rows, hp_ns, horz_size, next_id)
+                    new_elements.append(_make_table_para(para, tbl_elem, hp_t, hp_linesegarray, hp_lineseg, next_id))
+                    next_id += 1
+
+            elif isinstance(block, HtmlTableBlock):
+                cells, n_rows, n_cols = parse_html_table(block.table_el)
+                if cells:
+                    tbl_elem, next_id = build_hwpx_table_from_cells(cells, n_rows, n_cols, hp_ns, horz_size, next_id)
+                    new_elements.append(_make_table_para(para, tbl_elem, hp_t, hp_linesegarray, hp_lineseg, next_id))
+                    next_id += 1
+
+            elif isinstance(block, HtmlListBlock):
+                for text, depth, glyph in flatten_list(block.list_el):
+                    if header_root is not None:
+                        if bullets_el is None:
+                            bullets_el = get_or_create_bullets_container(header_root)
+                        bullet_id = ensure_bullet(header_root, bullets_el, glyph, bullet_id_cache)
+                        para_pr_id = ensure_bullet_para_pr(header_root, bullet_id, depth, para_pr_id_cache)
+                        header_dirty = True
+                        new_elements.append(_make_text_para(
+                            para, text, hp_t, hp_linesegarray, hp_lineseg, next_id, para_pr_id=para_pr_id,
+                        ))
+                    else:
+                        prefix = "  " * depth + glyph + " "
+                        new_elements.append(_make_text_para(
+                            para, prefix + text, hp_t, hp_linesegarray, hp_lineseg, next_id,
+                        ))
+                    next_id += 1
+
+        if not new_elements:
+            continue
 
         parent.remove(para)
-        for j, new_p in enumerate(new_paras):
+        for j, new_p in enumerate(new_elements):
             parent.insert(idx + j, new_p)
 
-
-def _clear_lineseg(para, hp_linesegarray: str, hp_lineseg: str) -> None:
-    """lineseg 자식을 제거해 HWP가 열 때 레이아웃을 재계산하도록 한다."""
-    lsa = para.find(hp_linesegarray)
-    if lsa is None:
-        return
-    for ls in list(lsa.findall(hp_lineseg)):
-        lsa.remove(ls)
+    return header_dirty

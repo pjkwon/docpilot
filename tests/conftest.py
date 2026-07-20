@@ -50,6 +50,53 @@ def _make_hwpx(path: Path, content_xml: bytes = _HWPX_CONTENT) -> Path:
     return path
 
 
+# Minimal but real section0.xml + header.xml pair (paraPrIDRef schema) —
+# unlike _HWPX_CONTENT (content.hml, no header.xml), this exercises the
+# bullet-list rendering path, which requires header.xml to attach
+# hh:bullet/hh:paraPr definitions to.
+_HWPX_HEADER = """<?xml version="1.0" encoding="UTF-8"?>
+<hh:head xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+         xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"
+         xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core"
+         version="1.5" secCnt="1">
+  <hh:refList>
+    <hh:numberings itemCnt="0"/>
+    <hh:paraProperties itemCnt="1">
+      <hh:paraPr id="0" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="1" suppressLineNumbers="0" checked="0">
+        <hh:align horizontal="JUSTIFY" vertical="BASELINE"/>
+        <hh:heading type="NONE" idRef="0" level="0"/>
+      </hh:paraPr>
+    </hh:paraProperties>
+  </hh:refList>
+</hh:head>""".encode("utf-8")
+
+_HWPX_SECTION0 = """<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p id="1" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">
+    <hp:run charPrIDRef="0"><hp:t>{{내용}}</hp:t></hp:run>
+    <hp:linesegarray>
+      <hp:lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="42520" flags="393216"/>
+    </hp:linesegarray>
+  </hp:p>
+</hs:sec>""".encode("utf-8")
+
+
+def _make_hwpx_with_header(path: Path, section_xml: bytes = _HWPX_SECTION0,
+                            header_xml: bytes = _HWPX_HEADER) -> Path:
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("mimetype", "application/hwp+zip", compress_type=zipfile.ZIP_STORED)
+        zf.writestr("Contents/section0.xml", section_xml)
+        zf.writestr("Contents/header.xml", header_xml)
+        zf.writestr("META-INF/container.xml", b"<container/>")
+    return path
+
+
+@pytest.fixture()
+def hwpx_template_with_header(tmp_path: Path) -> Path:
+    return _make_hwpx_with_header(tmp_path / "template_with_header.hwpx")
+
+
 @pytest.fixture()
 def sample_hwpx(tmp_path: Path) -> Path:
     return _make_hwpx(tmp_path / "sample.hwpx")
