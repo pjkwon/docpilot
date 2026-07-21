@@ -9,7 +9,8 @@
 - `suggest_extras()`가 제안하는 설치 명령이 옛 패키지명(`pip install "docpilot[...]"`)을 반환하던 버그 수정 → `smart-docgen[...]`
 
 ### Changed
-- README의 MCP 서버 연결 예시(`claude_desktop_config.json`)의 `mcpServers` 키를 `docpilot` → `smart-docgen`으로 변경, 이에 맞춰 예시 프롬프트("smart-docgen 도구 목록 보여줘" 등)도 함께 수정. `docpilot-mcp` 명령어·`DOCPILOT_*` 환경변수 등 실제 코드 식별자는 변경 없음
+- **[Breaking]** MCP 콘솔 스크립트(실행 파일)명을 `docpilot-mcp` → `smart-docgen-mcp`로 변경. 기존에 `claude_desktop_config.json`의 `"command"`에 `docpilot-mcp`를 지정해둔 경우 `smart-docgen-mcp`로 직접 갱신해야 함 (자동 마이그레이션 없음)
+- README의 MCP 서버 연결 예시(`claude_desktop_config.json`)의 `mcpServers` 키를 `docpilot` → `smart-docgen`으로 변경, 이에 맞춰 예시 프롬프트("smart-docgen 도구 목록 보여줘" 등)도 함께 수정
 - MCP 서버의 등록 이름(FastMCP name)과 클라이언트에 노출되는 설명(instructions) 첫 문장을 `docpilot` → `smart-docgen`으로 변경
 - `.env.example`, `pyproject.toml` 주석의 잘못된 pip 설치 예시(`docpilot[postgres]`, `pip install docpilot`)를 `smart-docgen`으로 수정
 

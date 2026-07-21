@@ -1038,7 +1038,7 @@ pip install "smart-docgen[mcp] @ git+https://github.com/pjkwon/docpilot.git" //G
 {
   "mcpServers": {
     "smart-docgen": {
-      "command": "docpilot-mcp",
+      "command": "smart-docgen-mcp",
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-...",
         "DOCPILOT_DATABASE_URL": "sqlite:////Users/yourname/docpilot.db",

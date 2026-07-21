@@ -67,7 +67,7 @@ all       = [
 dev = ["pytest>=8.0", "pytest-mock>=3.0"]
 
 [project.scripts]
-docpilot-mcp = "docpilot.mcp_server:main"
+smart-docgen-mcp = "docpilot.mcp_server:main"
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
