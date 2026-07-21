@@ -39,7 +39,7 @@ pip install "smart-docgen[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
 
 ### Extras
 
-필요한 기능에 따라 extras를 추가하세요. (아래 예시는 PyPI 기준, GitHub 설치 시 `@ git+https://github.com/wynterkwon/docpilot.git` 추가)
+필요한 기능에 따라 extras를 추가하세요. (아래 예시는 PyPI 기준, GitHub 설치 시 `@ git+https://github.com/pjkwon/docpilot.git` 추가)
 
 ```bash
 pip install "smart-docgen[pdf]"       # PDF 읽기/쓰기 (OCR 포함)

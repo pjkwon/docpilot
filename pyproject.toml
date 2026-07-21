@@ -43,8 +43,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wynterkwon/docpilot"
-Issues = "https://github.com/wynterkwon/docpilot/issues"
+Homepage = "https://github.com/pjkwon/docpilot"
+Issues = "https://github.com/pjkwon/docpilot/issues"
 
 
 

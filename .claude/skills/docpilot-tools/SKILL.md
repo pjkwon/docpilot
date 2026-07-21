@@ -13,10 +13,10 @@ description: docpilot 라이브러리를 이용한 문서 포맷 변환(hwp/hwpx
 
 1. **이 스킬이 docpilot 레포 자체 안에 있는 경우** (`docpilot/` 소스와 `.venv/`가 현재 프로젝트 루트에 있음):
    프로젝트 루트의 `.venv/Scripts/python.exe`(Windows) 또는 `.venv/bin/python`(macOS/Linux)를 쓴다.
-2. **그 외의 경우** (다른 프로젝트에 `pip install git+https://github.com/wynterkwon/docpilot.git`로
+2. **그 외의 경우** (다른 프로젝트에 `pip install git+https://github.com/pjkwon/docpilot.git`로
    설치해서 이 스킬 폴더만 복사해온 경우): 그 프로젝트에서 활성화된/기본 `python`을 쓴다.
 3. 실행 전에 `<python> -c "import docpilot"`으로 import 가능 여부를 먼저 확인한다. 실패하면
-   `pip install git+https://github.com/wynterkwon/docpilot.git`로 설치가 필요하다고 사용자에게 안내하고 멈출 것 — 임의로 설치를 진행하지 말 것.
+   `pip install git+https://github.com/pjkwon/docpilot.git`로 설치가 필요하다고 사용자에게 안내하고 멈출 것 — 임의로 설치를 진행하지 말 것.
 
 찾은 인터프리터로 이렇게 실행한다 (`<python>`, `<skill_dir>`은 위에서 판단한 값):
 
@@ -77,4 +77,4 @@ description: docpilot 라이브러리를 이용한 문서 포맷 변환(hwp/hwpx
 
 - `convert`는 LLM을 쓰지 않고, `generate`만 API 비용이 발생한다. 사용자가 비용에 민감해 보이면 먼저 언급할 것.
 - 두 서브커맨드 모두 실패 시 exit code 1과 `[오류]`/`[실패]`/`[미지원]` 접두사가 붙은 메시지를 stdout에 출력한다. 그대로 사용자에게 전달하면 된다.
-- 이 스킬은 `docpilot` 패키지에 종속적이다 — 실행할 환경에 `docpilot`이 import 가능해야 한다(이 레포 자체의 `.venv`이거나, `pip install git+https://github.com/wynterkwon/docpilot.git`로 설치한 다른 환경).
+- 이 스킬은 `docpilot` 패키지에 종속적이다 — 실행할 환경에 `docpilot`이 import 가능해야 한다(이 레포 자체의 `.venv`이거나, `pip install git+https://github.com/pjkwon/docpilot.git`로 설치한 다른 환경).
