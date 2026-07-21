@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Changed
+- README의 MCP 서버 연결 예시(`claude_desktop_config.json`)의 `mcpServers` 키를 `docpilot` → `smart-docgen`으로 변경, 이에 맞춰 예시 프롬프트("smart-docgen 도구 목록 보여줘" 등)도 함께 수정. `docpilot-mcp` 명령어·`DOCPILOT_*` 환경변수 등 실제 코드 식별자는 변경 없음
+
 ## [0.1.1] - 2026-07-21
 
 ### Changed

@@ -1015,7 +1015,7 @@ print(report)
 
 ## MCP 서버
 
-Claude 앱에서 docpilot 도구를 직접 사용하려면 MCP 서버를 설치하고 연결합니다.
+Claude 앱에서 smart-docgen 도구를 직접 사용하려면 MCP 서버를 설치하고 연결합니다.
 
 ### 설치
 예시는 PyPI 기준. GitHub 레포 참조해 설치 시 `@ git+https://github.com/pjkwon/docpilot.git` 추가
@@ -1037,7 +1037,7 @@ pip install "smart-docgen[mcp] @ git+https://github.com/pjkwon/docpilot.git" //G
 ```json
 {
   "mcpServers": {
-    "docpilot": {
+    "smart-docgen": {
       "command": "docpilot-mcp",
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-...",
@@ -1078,14 +1078,14 @@ macOS는 앱별로 `~/Documents`, `~/Desktop`, `~/Downloads` 접근을 별도로
 
 Claude 앱에서 자연어로 사용합니다.
 
-> **[중요] "docpilot 사용 가능해?" 같은 질문은 하지 마세요.**
+> **[중요] "smart-docgen 사용 가능해?" 같은 질문은 하지 마세요.**
 > Claude는 이런 질문에 학습 데이터 기반으로 답하므로 툴이 등록되어 있어도 "사용할 수 없다"고 답할 수 있습니다.
 > MCP 서버는 Claude Desktop을 시작할 때 자동으로 실행됩니다.
-> 바로 작업을 지시하거나, 툴 목록을 먼저 확인하려면 **"사용 가능한 docpilot 도구 목록 보여줘"** 라고 요청하세요.
+> 바로 작업을 지시하거나, 툴 목록을 먼저 확인하려면 **"사용 가능한 smart-docgen 도구 목록 보여줘"** 라고 요청하세요.
 
 ```
 # 툴 목록 확인 (처음 사용 시 권장)
-사용 가능한 docpilot 도구 목록 보여줘.
+사용 가능한 smart-docgen 도구 목록 보여줘.
 
 # 템플릿 구조 확인 (문서 생성 전 첫 단계)
 report 템플릿에 어떤 섹션이 있는지 보여줘.
@@ -1107,7 +1107,7 @@ report 템플릿에 어떤 섹션이 있는지 보여줘.
 ```
 
 > `describe_template`/`fill_template`은 LLM API를 호출하지 않습니다 — 데이터를 읽고 섹션 내용을
-> 작성하는 것은 Claude 앱 자신의 추론이며, docpilot MCP 서버는 그 결과를 문서 파일로 조립만 합니다.
+> 작성하는 것은 Claude 앱 자신의 추론이며, smart-docgen MCP 서버는 그 결과를 문서 파일로 조립만 합니다.
 > 따라서 위 "데이터로 문서 생성" 같은 요청의 실제 작성 품질은 Claude 앱이 데이터 폴더를 얼마나
 > 잘 읽고 요약하는지에 달려 있습니다 (RAG 검색으로 관련 청크만 추리는 라이브러리 `pilot.generate()`와의 차이점).
 
