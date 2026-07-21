@@ -102,7 +102,7 @@ def suggest_extras(folder: str | Path) -> dict:
     })
 
     install_command = (
-        f'pip install "docpilot[{",".join(required)}]"' if required else None
+        f'pip install "smart-docgen[{",".join(required)}]"' if required else None
     )
 
     return {

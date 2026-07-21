@@ -31,7 +31,7 @@ dependencies = [
     # python-docx: DOCX read/write/template generation, core — no [docx] extra needed.
     "python-docx>=1.2.0",
     # sentence-transformers + sqlite-vec: default embedding (multilingual-e5-base) + SQLite
-    # vector backend, both core — hybrid search works with a bare `pip install docpilot`.
+    # vector backend, both core — hybrid search works with a bare `pip install smart-docgen`.
     "sentence-transformers>=5.5.1",
     # pyhwpx: HWP/HWPX <-> DOCX conversion via Hancom Office COM automation (Windows only,
     # requires Hancom Office itself — a separate, non-pip system install). The Python

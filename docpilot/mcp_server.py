@@ -70,9 +70,9 @@ def _get_pilot():
 
 
 mcp = FastMCP(
-    "docpilot",
+    "smart-docgen",
     instructions=(
-        "docpilot는 RAG/인덱싱 없이 문서 포맷 변환(HWP/HWPX/DOCX)과 템플릿 기반 문서 조립을 "
+        "smart-docgen는 RAG/인덱싱 없이 문서 포맷 변환(HWP/HWPX/DOCX)과 템플릿 기반 문서 조립을 "
         "제공합니다. 콘텐츠 작성(데이터 읽기·문장 구성)은 이 서버가 아니라 호출하는 에이전트가 "
         "직접 수행하고, 이 서버는 완성된 텍스트를 실제 문서 파일로 조립하는 역할만 합니다.\n"
         "\n"
