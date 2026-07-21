@@ -3,7 +3,7 @@ requires = ["setuptools>=61", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "docpilot"
+name = "smart-docgen"
 dynamic = ["version"]
 description = "LLM-powered document generation from data sources and templates"
 readme = "README.md"

@@ -20,9 +20,9 @@
 ### PyPI
 
 ```bash
-pip install docpilot
-pip install "docpilot[mcp]"
-pip install "docpilot[pdf,mcp]"
+pip install smart-docgen
+pip install "smart-docgen[mcp]"
+pip install "smart-docgen[pdf,mcp]"
 ```
 
 ### GitHub 직접 설치
@@ -30,34 +30,34 @@ pip install "docpilot[pdf,mcp]"
 extras 포함 시 `패키지명[extras] @ URL` 형식을 사용합니다.
 
 ```bash
-pip install "docpilot @ git+https://github.com/pjkwon/docpilot.git"
-pip install "docpilot[mcp] @ git+https://github.com/pjkwon/docpilot.git"
-pip install "docpilot[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
+pip install "smart-docgen @ git+https://github.com/pjkwon/docpilot.git"
+pip install "smart-docgen[mcp] @ git+https://github.com/pjkwon/docpilot.git"
+pip install "smart-docgen[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
 ```
 
-> **형태소(kiwipiepy) 검색, 벡터 검색(sqlite-vec + 기본 임베딩 `multilingual-e5-base`), DOCX 읽기/쓰기(`python-docx`), 한컴오피스 COM 연동(`pyhwpx`)은 모두 core dependencies입니다.** `pip install docpilot`만 해도 별도 extras 없이 하이브리드 검색과 DOCX·HWP 변환이 바로 동작합니다(단, HWP↔DOCX/HWPX 변환 자체는 Windows에 한컴오피스(한글)가 실제로 설치되어 있어야 합니다 — 이건 pip으로 설치할 수 없는 별도 라이선스 프로그램입니다). 아래 extras는 그 외 파일 포맷·LLM 제공자·대체 임베딩 등 선택 기능용입니다.
+> **형태소(kiwipiepy) 검색, 벡터 검색(sqlite-vec + 기본 임베딩 `multilingual-e5-base`), DOCX 읽기/쓰기(`python-docx`), 한컴오피스 COM 연동(`pyhwpx`)은 모두 core dependencies입니다.** `pip install smart-docgen`만 해도 별도 extras 없이 하이브리드 검색과 DOCX·HWP 변환이 바로 동작합니다(단, HWP↔DOCX/HWPX 변환 자체는 Windows에 한컴오피스(한글)가 실제로 설치되어 있어야 합니다 — 이건 pip으로 설치할 수 없는 별도 라이선스 프로그램입니다). 아래 extras는 그 외 파일 포맷·LLM 제공자·대체 임베딩 등 선택 기능용입니다.
 
 ### Extras
 
 필요한 기능에 따라 extras를 추가하세요. (아래 예시는 PyPI 기준, GitHub 설치 시 `@ git+https://github.com/wynterkwon/docpilot.git` 추가)
 
 ```bash
-pip install "docpilot[pdf]"       # PDF 읽기/쓰기 (OCR 포함)
-pip install "docpilot[openai]"    # OpenAI GPT / Grok / Ollama + 임베딩
-pip install "docpilot[gemini]"    # Google Gemini
-pip install "docpilot[voyage]"    # Voyage AI 임베딩 (한국어 우수)
-pip install "docpilot[bge]"       # BGE 로컬 임베딩 (BAAI/bge-m3, 한국어 더 우수하지만 ~2GB)
-pip install "docpilot[postgres]"  # PostgreSQL + pgvector (대용량)
-pip install "docpilot[mcp]"       # Claude 앱 MCP 서버
-pip install "docpilot[all]"       # 전체 설치
+pip install "smart-docgen[pdf]"       # PDF 읽기/쓰기 (OCR 포함)
+pip install "smart-docgen[openai]"    # OpenAI GPT / Grok / Ollama + 임베딩
+pip install "smart-docgen[gemini]"    # Google Gemini
+pip install "smart-docgen[voyage]"    # Voyage AI 임베딩 (한국어 우수)
+pip install "smart-docgen[bge]"       # BGE 로컬 임베딩 (BAAI/bge-m3, 한국어 더 우수하지만 ~2GB)
+pip install "smart-docgen[postgres]"  # PostgreSQL + pgvector (대용량)
+pip install "smart-docgen[mcp]"       # Claude 앱 MCP 서버
+pip install "smart-docgen[all]"       # 전체 설치
 ```
 
 복합 설치 예시:
 
 ```bash
-pip install "docpilot[pdf]"                            # 전체 파일 포맷 (나머지는 이미 core)
-pip install "docpilot[openai,bge]"                     # OpenAI LLM + 고품질 로컬 임베딩
-pip install "docpilot[pdf,openai,postgres]"            # 풀 스택
+pip install "smart-docgen[pdf]"                            # 전체 파일 포맷 (나머지는 이미 core)
+pip install "smart-docgen[openai,bge]"                     # OpenAI LLM + 고품질 로컬 임베딩
+pip install "smart-docgen[pdf,openai,postgres]"            # 풀 스택
 ```
 
 ### 시스템 의존성
@@ -209,7 +209,7 @@ from docpilot import suggest_extras
 result = suggest_extras("./data")
 print(result["found"])            # {'.pdf': 3, '.hwpx': 2, '.txt': 5, '.xlsx': 1}
 print(result["required_extras"])  # ['pdf']
-print(result["install_command"])  # pip install "docpilot[pdf]"
+print(result["install_command"])  # pip install "smart-docgen[pdf]"
 print(result["unsupported"])      # {'.xlsx': 1}  ← docpilot이 처리할 수 없는 형식
 ```
 
@@ -654,7 +654,7 @@ pilot.generate_template(samples=[...], output="./templates/my_report.docx", use_
 
 형태소 exact match로 찾은 청크와 의미적으로 유사한 청크(유의어 포함)를 함께 포착해 순위를 병합합니다.
 
-`multilingual-e5-base` 로컬 모델이 core dependency라 `pip install docpilot`만으로 자동 사용됩니다. `sentence-transformers`나 `sqlite-vec`를 별도로 제거한 환경이라면 형태소 AND → OR 폴백으로 동작합니다.
+`multilingual-e5-base` 로컬 모델이 core dependency라 `pip install smart-docgen`만으로 자동 사용됩니다. `sentence-transformers`나 `sqlite-vec`를 별도로 제거한 환경이라면 형태소 AND → OR 폴백으로 동작합니다.
 
 #### top_k 조정 — 문서 유형별 컨텍스트 튜닝
 
@@ -678,7 +678,7 @@ pilot.generate(data_folder="./data", template="proposal", output="./out.hwpx", t
 
 #### DocPilot.search() — 통합 인터페이스
 
-인덱싱 후 `pilot.search()`로 검색할 수 있습니다. 별도 설치 없이 `pip install docpilot`만으로 하이브리드 검색이 바로 동작합니다.
+인덱싱 후 `pilot.search()`로 검색할 수 있습니다. 별도 설치 없이 `pip install smart-docgen`만으로 하이브리드 검색이 바로 동작합니다.
 
 ```python
 # 기본: embed_fn 지정 불필요 — multilingual-e5-base 자동 사용
@@ -850,11 +850,11 @@ docpilot은 벡터 검색(RAG)에 사용할 임베딩 제공자를 자유롭게 
 ```python
 from docpilot.search.embedding import openai_embed_fn, voyage_embed_fn
 
-# OpenAI — pip install "docpilot[openai]"
+# OpenAI — pip install "smart-docgen[openai]"
 embed_fn = openai_embed_fn()                                    # OPENAI_API_KEY 환경변수 사용
 embed_fn = openai_embed_fn(api_key="sk-...", model="text-embedding-3-large")
 
-# Voyage AI — pip install "docpilot[voyage]" / 한국어 포함 다국어 우수
+# Voyage AI — pip install "smart-docgen[voyage]" / 한국어 포함 다국어 우수
 embed_fn = voyage_embed_fn()                                    # VOYAGE_API_KEY 환경변수 사용
 embed_fn = voyage_embed_fn(api_key="pa-...", model="voyage-3")
 
@@ -876,7 +876,7 @@ from docpilot.search.embedding import default_embed_fn, bge_embed_fn, sentence_e
 # DocPilot()은 자동으로 이 함수를 사용 (명시적으로 전달할 필요 없음)
 embed_fn = default_embed_fn()                                   # multilingual-e5-base, 768차원, ~560MB
 
-# BGE — pip install "docpilot[bge]" / 한국어 포함 다국어 최상위권
+# BGE — pip install "smart-docgen[bge]" / 한국어 포함 다국어 최상위권
 embed_fn = bge_embed_fn()                                       # CPU, BAAI/bge-m3, 1024차원
 embed_fn = bge_embed_fn(device="cuda", use_fp16=True)          # GPU 가속
 
@@ -933,7 +933,7 @@ pilot = DocPilot(llm="claude", embed_fn=my_embed_fn)
 | 방식 | URL 형식 | 비고 |
 |------|----------|------|
 | SQLite (기본) | `sqlite:////home/yourname/docpilot.db` | 서버 불필요, **절대 경로 권장** |
-| PostgreSQL | `postgresql://user:pw@host:5432/dbname` | `pip install "docpilot[postgres]"` 필요 |
+| PostgreSQL | `postgresql://user:pw@host:5432/dbname` | `pip install "smart-docgen[postgres]"` 필요 |
 
 ```python
 pilot = DocPilot(
@@ -1021,8 +1021,8 @@ Claude 앱에서 docpilot 도구를 직접 사용하려면 MCP 서버를 설치�
 예시는 PyPI 기준. GitHub 레포 참조해 설치 시 `@ git+https://github.com/pjkwon/docpilot.git` 추가
 
 ```bash
-pip install "docpilot[mcp]" //PyPI 기준
-pip install "docpilot[mcp] @ git+https://github.com/pjkwon/docpilot.git" //GitHub 레포 참조 설치 기준 
+pip install "smart-docgen[mcp]" //PyPI 기준
+pip install "smart-docgen[mcp] @ git+https://github.com/pjkwon/docpilot.git" //GitHub 레포 참조 설치 기준 
 ```
 
 ### Claude Desktop 연결
