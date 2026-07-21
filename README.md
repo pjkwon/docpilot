@@ -49,7 +49,6 @@ pip install "docpilot[openai]"    # OpenAI GPT / Grok / Ollama + 임베딩
 pip install "docpilot[gemini]"    # Google Gemini
 pip install "docpilot[voyage]"    # Voyage AI 임베딩 (한국어 우수)
 pip install "docpilot[bge]"       # BGE 로컬 임베딩 (BAAI/bge-m3, 한국어 더 우수하지만 ~2GB)
-pip install "docpilot[sentence]"  # sentence-transformers 임베딩 — 기본 모델 외 다른 모델 지정 시
 pip install "docpilot[postgres]"  # PostgreSQL + pgvector (대용량)
 pip install "docpilot[mcp]"       # Claude 앱 MCP 서버
 pip install "docpilot[all]"       # 전체 설치
@@ -871,7 +870,7 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 |--------|------------|-----------|------|------------|------|
 | 기본 내장 | `default_embed_fn()` | `intfloat/multilingual-e5-base` | ~560MB | core (기본 설치 포함) | zero-config, 768차원 |
 | BGE (BAAI) | `bge_embed_fn()` | `BAAI/bge-m3` | ~2GB | `[bge]` | 최고 품질, 1024차원 |
-| sentence-transformers | `sentence_embed_fn()` | `intfloat/multilingual-e5-base` | ~560MB | `[sentence]` | 모델 지정 가능 |
+| sentence-transformers | `sentence_embed_fn()` | `paraphrase-multilingual-MiniLM-L12-v2` | ~470MB | core (기본 설치 포함) | 임의 sentence-transformers 모델 직접 지정 가능 — `default_embed_fn()`과 기본 모델이 다름 |
 
 ```python
 from docpilot.search.embedding import default_embed_fn, bge_embed_fn, sentence_embed_fn
@@ -884,9 +883,10 @@ embed_fn = default_embed_fn()                                   # multilingual-e
 embed_fn = bge_embed_fn()                                       # CPU, BAAI/bge-m3, 1024차원
 embed_fn = bge_embed_fn(device="cuda", use_fp16=True)          # GPU 가속
 
-# sentence-transformers — pip install "docpilot[sentence]" / 모델 직접 지정
+# sentence-transformers — core dependency, 별도 설치 불필요 / 모델 직접 지정
 embed_fn = sentence_embed_fn("intfloat/multilingual-e5-large") # 더 높은 품질
 embed_fn = sentence_embed_fn("intfloat/multilingual-e5-small") # 더 가벼운 옵션
+embed_fn = sentence_embed_fn()                                  # 인자 없이 호출 시 paraphrase-multilingual-MiniLM-L12-v2 (default_embed_fn()과 다른 모델)
 
 pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 ```
@@ -1134,8 +1134,8 @@ report 템플릿에 어떤 섹션이 있는지 보여줘.
 | `openai` | `text-embedding-3-small` | `[openai]` | `OPENAI_API_KEY` 필요 |
 | `openai:text-embedding-3-large` | text-embedding-3-large | `[openai]` | |
 | `voyage` | `voyage-3` | `[voyage]` | `VOYAGE_API_KEY` 필요 |
-| `sentence` | `intfloat/multilingual-e5-base` | `[sentence]` | |
-| `sentence:intfloat/multilingual-e5-large` | multilingual-e5-large | `[sentence]` | 더 높은 품질 |
+| `sentence` | `paraphrase-multilingual-MiniLM-L12-v2` | core (기본 설치 포함) | (미설정)과 기본 모델이 다름 |
+| `sentence:intfloat/multilingual-e5-large` | multilingual-e5-large | core (기본 설치 포함) | 더 높은 품질 |
 
 ## 비용 추정
 

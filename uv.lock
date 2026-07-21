@@ -712,7 +712,6 @@ all = [
     { name = "pytesseract" },
     { name = "python-docx" },
     { name = "reportlab" },
-    { name = "sentence-transformers" },
     { name = "voyageai" },
 ]
 bge = [
@@ -747,9 +746,6 @@ pdf = [
 postgres = [
     { name = "pgvector" },
     { name = "psycopg2-binary" },
-]
-sentence = [
-    { name = "sentence-transformers" },
 ]
 voyage = [
     { name = "voyageai" },
@@ -796,14 +792,12 @@ requires-dist = [
     { name = "reportlab", marker = "extra == 'all'", specifier = ">=4.0" },
     { name = "reportlab", marker = "extra == 'pdf'", specifier = ">=4.0" },
     { name = "sentence-transformers", specifier = ">=5.5.1" },
-    { name = "sentence-transformers", marker = "extra == 'all'", specifier = ">=3.0" },
-    { name = "sentence-transformers", marker = "extra == 'sentence'", specifier = ">=3.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "sqlite-vec", specifier = ">=0.1.9" },
     { name = "voyageai", marker = "extra == 'all'", specifier = ">=0.3" },
     { name = "voyageai", marker = "extra == 'voyage'", specifier = ">=0.3" },
 ]
-provides-extras = ["pdf", "hwp", "docx", "openai", "gemini", "voyage", "bge", "sentence", "postgres", "mcp", "all", "dev"]
+provides-extras = ["pdf", "hwp", "docx", "openai", "gemini", "voyage", "bge", "postgres", "mcp", "all", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
