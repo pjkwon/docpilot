@@ -902,7 +902,19 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 > **모델 캐시**: 로컬 모델은 첫 실행 시 HuggingFace에서 자동 다운로드되어 `~/.cache/huggingface/`에 저장됩니다. 이후 실행부터는 캐시에서 불러옵니다.
 
-> **임베딩 차원**: 기본 임베딩 모델은 `bge_embed_fn()` (BAAI/bge-m3, **1024차원**)입니다. 임베딩 제공자를 변경하거나 처음 설정하는 경우, `EMBEDDING_DIM`과 vec_chunks 테이블 차원이 일치해야 합니다. 기존 DB가 있다면 삭제 후 재생성하거나 `vec_chunks`를 DROP 후 `client.create_tables()`로 재생성하세요.
+> **임베딩 차원**: 기본 임베딩 모델은 `default_embed_fn()` (multilingual-e5-base, **768차원**, `EMBEDDING_DIM` 기본값도 768). `bge_embed_fn()`으로 바꾸면 1024차원입니다. 임베딩 제공자를 변경하는 경우 `EMBEDDING_DIM`과 vec_chunks 테이블 차원이 일치해야 합니다. 기존 DB가 있다면 삭제 후 재생성하거나 `vec_chunks`를 DROP 후 `client.create_tables()`로 재생성하세요.
+
+### multilingual-e5-base vs BGE-m3, 언제 바꿔야 할까
+
+| | multilingual-e5-base (기본) | BAAI/bge-m3 |
+|---|---|---|
+| 파라미터 | ~278M | ~568M |
+| 최대 컨텍스트 | 512 토큰 | 8192 토큰 |
+| 용량 | ~560MB | ~2GB |
+
+정확한 검색 품질 벤치마크 수치는 모델마다·태스크마다 달라 여기서 단정하지 않습니다. 필요하면 [MTEB 리더보드](https://huggingface.co/spaces/mteb/leaderboard)에서 두 모델을 직접 비교하세요.
+
+다만 docpilot 기본 설정에서 확인 가능한 제약이 하나 있습니다. 인덱싱 기본 청크 크기는 문자 기준 1000자(`docpilot/db/indexer.py`의 `_CHUNK_SIZE`)인데, 한글은 토큰당 대략 1.5~2자라 청크에 따라 500~700토큰대가 나올 수 있습니다. e5-base는 512토큰이 한도라 이런 청크는 초과분이 **에러 없이 조용히 잘려서** 인코딩됩니다. BGE-m3는 8192토큰이라 이 문제가 없습니다. 청크가 자주 긴 데이터(회의록 전문, 긴 조항형 문서 등)를 다룬다면 BGE-m3 쪽이 안전합니다.
 
 ### 커스텀 임베딩
 
