@@ -12,22 +12,16 @@ def _ingesters_table() -> dict[str, Callable[[Path], IngestedDocument]]:
     """Extension -> per-format ingest() function. Shared by indexer.index_folder() and ingest_paths()."""
     from docpilot.ingestion import text as text_ing
     from docpilot.ingestion import pdf as pdf_ing
-    from docpilot.ingestion import image as image_ing
-    from docpilot.ingestion import pptx as pptx_ing
     from docpilot.ingestion import hwpx as hwpx_ing
     from docpilot.ingestion import hwp as hwp_ing
     from docpilot.ingestion import docx as docx_ing
-    from docpilot.ingestion import audio as audio_ing
 
     return {
         **{ext: text_ing.ingest for ext in text_ing.SUPPORTED_EXTENSIONS},
         ".pdf": pdf_ing.ingest,
-        **{ext: image_ing.ingest for ext in image_ing.SUPPORTED_EXTENSIONS},
-        ".pptx": pptx_ing.ingest,
         ".hwpx": hwpx_ing.ingest,
         ".hwp": hwp_ing.ingest,
         ".docx": docx_ing.ingest,
-        **{ext: audio_ing.ingest for ext in audio_ing.SUPPORTED_SUFFIXES},
     }
 
 

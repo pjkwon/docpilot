@@ -47,12 +47,7 @@ Issues = "https://github.com/wynterkwon/docpilot/issues"
 [project.optional-dependencies]
 pdf      = ["pdfplumber>=0.11", "pdf2image>=1.17", "Pillow>=10.0", "pytesseract>=0.3", "reportlab>=4.0"]
 hwp      = ["pyhwpx>=0.2"]
-pptx     = ["python-pptx>=1.0"]
-image    = ["Pillow>=10.0"]
 docx     = ["python-docx>=1.1"]
-audio-openai = ["openai>=1.0"]
-audio-local  = ["faster-whisper>=1.2.1"]
-audio        = ["faster-whisper>=1.2.1"]
 openai    = ["openai>=1.0"]
 gemini    = ["google-genai>=1.0"]
 voyage    = ["voyageai>=0.3"]
@@ -62,7 +57,6 @@ postgres  = ["psycopg2-binary>=2.9", "pgvector>=0.3"]
 mcp       = ["mcp[cli]>=1.0"]
 all       = [
     "pdfplumber>=0.11", "pdf2image>=1.17", "Pillow>=10.0", "pytesseract>=0.3", "reportlab>=4.0",
-    "python-pptx>=1.0",
     "python-docx>=1.1",
     "openai>=1.0",
     "google-genai>=1.0",
@@ -70,7 +64,6 @@ all       = [
     "FlagEmbedding>=1.0",
     "sentence-transformers>=3.0",
     "psycopg2-binary>=2.9", "pgvector>=0.3",
-    "faster-whisper>=1.2.1",
 ]
 dev = ["pytest>=8.0", "pytest-mock>=3.0"]
 

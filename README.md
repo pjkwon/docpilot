@@ -4,8 +4,8 @@
 
 ## 특징
 
-- **다양한 입력 소스** — TXT, MD, RST, CSV, HWPX, HWP, DOCX, PPTX, PDF (OCR 폴백 포함), 이미지(JPG/PNG 등), 음성(MP3/WAV/M4A 등 — Whisper 전사)
-- **구조화 인제스트** — HWPX·DOCX 스타일 기반 헤딩, PPTX 불릿 계층, PDF 폰트 크기 기반 헤딩 감지, 의미 경계 청킹으로 RAG 검색 품질 향상
+- **다양한 입력 소스** — TXT, MD, RST, CSV, HWPX, HWP, DOCX, PDF (OCR 폴백 포함)
+- **구조화 인제스트** — HWPX·DOCX 스타일 기반 헤딩, PDF 폰트 크기 기반 헤딩 감지, 의미 경계 청킹으로 RAG 검색 품질 향상
 - **다양한 출력 포맷** — HWPX, DOCX, PDF
 - **LLM 교체 가능** — Claude · OpenAI · Gemini · Grok · Ollama, 동일 인터페이스
 - **하이브리드 검색 (RRF)** — 형태소 AND(FTS5·BM25) + 벡터(sqlite-vec/pgvector)를 동시 실행 후 Reciprocal Rank Fusion으로 병합. 별도 설정 없이 `multilingual-e5-base` 로컬 모델 기본 내장
@@ -44,11 +44,7 @@ pip install "docpilot[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
 ```bash
 pip install "docpilot[pdf]"       # PDF 읽기/쓰기 (OCR 포함)
 pip install "docpilot[hwp]"       # HWP 읽기 (한컴오피스 설치 필요)
-pip install "docpilot[pptx]"      # PPTX 읽기
-pip install "docpilot[image]"        # 이미지 읽기 (JPG, PNG 등)
 pip install "docpilot[docx]"         # DOCX 읽기/쓰기/템플릿 생성
-pip install "docpilot[audio]"        # 음성 전사 — faster-whisper (로컬, 무료)
-pip install "docpilot[audio-openai]" # 음성 전사 — OpenAI Whisper API
 pip install "docpilot[openai]"    # OpenAI GPT / Grok / Ollama + 임베딩
 pip install "docpilot[gemini]"    # Google Gemini
 pip install "docpilot[voyage]"    # Voyage AI 임베딩 (한국어 우수)
@@ -62,7 +58,7 @@ pip install "docpilot[all]"       # 전체 설치
 복합 설치 예시:
 
 ```bash
-pip install "docpilot[pdf,hwp,pptx,image,docx]"       # 모든 파일 형식
+pip install "docpilot[pdf,hwp,docx]"                   # 모든 파일 형식
 pip install "docpilot[openai,bge]"                     # OpenAI LLM + 고품질 로컬 임베딩
 pip install "docpilot[pdf,openai,postgres]"            # 풀 스택
 ```
@@ -73,7 +69,7 @@ pip install "docpilot[pdf,openai,postgres]"            # 풀 스택
 
 | 도구 | 용도 | 관련 extras | 설치 |
 |------|------|-------------|------|
-| [Tesseract](https://github.com/tesseract-ocr/tesseract) | PDF/이미지 OCR | `[pdf]` `[image]` | [설치 가이드](https://tesseract-ocr.github.io/tessdoc/Installation.html) |
+| [Tesseract](https://github.com/tesseract-ocr/tesseract) | PDF(스캔본) OCR | `[pdf]` | [설치 가이드](https://tesseract-ocr.github.io/tessdoc/Installation.html) |
 | [Poppler](https://poppler.freedesktop.org/) | PDF → 이미지 변환 | `[pdf]` | Windows: `winget install poppler` |
 | 한컴오피스 (한글) | HWP → HWPX 변환, HWP/HWPX → DOCX 변환 (COM 자동화) | `[hwp]` | Windows 전용, 별도 라이선스 필요 |
 
@@ -184,9 +180,6 @@ pilot.generate(
 |------|--------|-------------|------|
 | PDF | `.pdf` | `[pdf]` | OCR 폴백 포함 (Tesseract + Poppler 필요) |
 | HWP | `.hwp` | `[hwp]` | 한컴오피스 설치 필요 (COM 자동화) |
-| PowerPoint | `.pptx` | `[pptx]` | |
-| 이미지 | `.jpg` `.jpeg` `.png` `.bmp` `.tiff` `.webp` | `[image]` | OCR (Tesseract 필요) |
-| 음성 | `.mp3` `.mp4` `.wav` `.m4a` `.ogg` `.flac` `.webm` | `[audio]` 또는 `[audio-openai]` | Whisper 전사. `WHISPER_BACKEND=local`(기본) 또는 `openai` |
 
 ```python
 pilot.index("./data")   # 폴더 내 모든 지원 파일을 재귀적으로 인덱싱
@@ -205,9 +198,8 @@ pilot.index("./data", reindex=True)   # 전체 강제 재인덱싱
 | 포맷 | 구조 정보 |
 |------|-----------|
 | HWPX · DOCX | 스타일 이름 및 폰트 크기 기반 헤딩 감지. HWPX는 다중 섹션 문서 전체 추출 지원 (글상자·각주·표 셀 포함) |
-| PPTX | 슬라이드 제목 + 불릿 들여쓰기 계층 (level 0–8) 보존 |
 | PDF (텍스트) | 페이지 내 폰트 크기 중앙값 대비 1.2× 이상인 라인을 `[헤딩]`으로 마킹 |
-| PDF (스캔본) · 이미지 | OCR 평문 (폰트 메타데이터 없음) |
+| PDF (스캔본) | OCR 평문 (폰트 메타데이터 없음) |
 
 청킹은 `\n\n` 단락 경계를 기준으로 분리하며, 단락 중간에서 잘리지 않습니다.
 
@@ -366,8 +358,7 @@ pilot.generate(
 |-------------|-----------|----------------|
 | `.hwpx` | LLM이 문서 구조 분석 | 원본 .hwpx 구조·스타일 유지 |
 | `.docx` | LLM이 문서 구조 분석 | 원본 .docx 구조·스타일 유지 |
-| `.pdf` | LLM이 텍스트 추출 후 분석 | 내장 `report` 템플릿 기반 .hwpx 출력 |
-| `.pptx` · `.txt` · `.md` 등 | LLM이 텍스트 추출 후 분석 | 내장 `report` 템플릿 기반 .hwpx 출력 |
+| `.pdf` · `.txt` · `.md` 등 | LLM이 텍스트 추출 후 분석 | 내장 `report` 템플릿 기반 .hwpx 출력 |
 
 > **참고** PDF·텍스트 형식은 원본 서식 구조를 재현할 수 없어 내장 보고서 양식을 베이스로 사용합니다. 원본 서식을 살리려면 `.hwpx` 또는 `.docx` 파일을 사용하세요.
 
@@ -1132,8 +1123,6 @@ report 템플릿에 어떤 섹션이 있는지 보여줘.
 | `DOCPILOT_MODEL` | 제공자 기본 | 특정 모델 지정 (예: `claude-opus-4-8`) |
 | `DOCPILOT_DATABASE_URL` | `~/docpilot.db` | DB 연결 문자열 (절대 경로 권장) |
 | `DOCPILOT_EMBED` | (자동) | 임베딩 모델 선택. 미설정 시 `multilingual-e5-base` 자동 사용 |
-| `WHISPER_BACKEND` | `local` | 음성 전사 백엔드. `local`(faster-whisper) 또는 `openai` |
-| `WHISPER_MODEL` | `large-v3` | faster-whisper 모델명. `tiny` / `base` / `small` / `medium` / `large-v3` |
 
 **`DOCPILOT_EMBED` 값 형식:**
 

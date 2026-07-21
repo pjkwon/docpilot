@@ -7,7 +7,6 @@ import pytest
 
 from docpilot.exceptions import IngestionError
 from docpilot.ingestion import text as text_ing
-from docpilot.ingestion import pptx as pptx_ing
 from docpilot.ingestion.models import IngestedDocument
 
 
@@ -68,44 +67,3 @@ class TestPdfIngestion:
             pdf_ing.ingest(bad)
 
 
-class TestImageIngestion:
-    def test_ocr(self, tmp_path: Path):
-        from docpilot.ingestion import image as image_ing
-
-        mock_image = MagicMock()
-        mock_image.width = 800
-        mock_image.height = 600
-        mock_image.mode = "RGB"
-
-        path = tmp_path / "sample.png"
-        path.write_bytes(b"\x89PNG fake")
-
-        with (
-            patch("PIL.Image.open", return_value=mock_image),
-            patch("pytesseract.image_to_string", return_value="추출된 텍스트"),
-        ):
-            doc = image_ing.ingest(path)
-
-        assert doc.content == "추출된 텍스트"
-        assert doc.metadata["width"] == 800
-
-    def test_unsupported_extension(self, tmp_path: Path):
-        from docpilot.ingestion import image as image_ing
-        bad = tmp_path / "file.gif"
-        bad.write_bytes(b"GIF fake")
-        with pytest.raises(IngestionError, match="Unsupported image format"):
-            image_ing.ingest(bad)
-
-
-class TestPptxIngestion:
-    def test_basic(self, sample_pptx: Path):
-        doc = pptx_ing.ingest(sample_pptx)
-        assert "[슬라이드 1]" in doc.content
-        assert "2025 사업 계획" in doc.content
-        assert doc.metadata["slide_count"] == 1
-
-    def test_wrong_extension(self, tmp_path: Path):
-        bad = tmp_path / "file.ppt"
-        bad.write_bytes(b"fake")
-        with pytest.raises(IngestionError, match="Expected .pptx"):
-            pptx_ing.ingest(bad)

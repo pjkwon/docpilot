@@ -110,22 +110,6 @@ def sample_txt(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def sample_pptx(tmp_path: Path) -> Path:
-    pptx = pytest.importorskip("pptx")
-    from pptx import Presentation
-    from pptx.util import Inches
-
-    prs = Presentation()
-    slide = prs.slides.add_slide(prs.slide_layouts[1])
-    slide.shapes.title.text = "2025 사업 계획"
-    slide.placeholders[1].text = "핵심 내용"
-
-    path = tmp_path / "sample.pptx"
-    prs.save(str(path))
-    return path
-
-
-@pytest.fixture()
 def hwpx_template(tmp_path: Path) -> Path:
     return _make_hwpx(tmp_path / "template.hwpx")
 

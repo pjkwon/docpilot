@@ -66,22 +66,7 @@ _EXT_EXTRAS: dict[str, str | None] = {
     ".hwpx": None,
     ".hwp":  "hwp",
     ".pdf":  "pdf",
-    ".pptx": "pptx",
     ".docx": "docx",
-    ".jpg":  "image",
-    ".jpeg": "image",
-    ".png":  "image",
-    ".tiff": "image",
-    ".tif":  "image",
-    ".bmp":  "image",
-    ".webp": "image",
-    ".mp3":  "audio",
-    ".mp4":  "audio",
-    ".wav":  "audio",
-    ".m4a":  "audio",
-    ".ogg":  "audio",
-    ".flac": "audio",
-    ".webm": "audio",
 }
 
 
@@ -92,7 +77,7 @@ def suggest_extras(folder: str | Path) -> dict:
     Returns a dict with:
       found          — {extension: file_count} for all files found
       unsupported    — {extension: file_count} for files docpilot cannot process
-      required_extras — list of extras needed (e.g. ["pdf", "pptx"])
+      required_extras — list of extras needed (e.g. ["pdf", "docx"])
       install_command — ready-to-run pip command, or None if nothing extra needed
     """
     folder = Path(folder)
@@ -208,9 +193,6 @@ def _ingest_instructions_doc(path: Path) -> str:
         if ext == ".docx":
             from docpilot.ingestion import docx as docx_ing
             return docx_ing.ingest(path).content
-        if ext == ".pptx":
-            from docpilot.ingestion import pptx as pptx_ing
-            return pptx_ing.ingest(path).content
     except Exception:
         pass
     return ""
@@ -256,8 +238,8 @@ def _validate_hwpx(path: Path) -> None:
 
 def _estimate_tokens_from_folder(folder: Path, n_sections: int) -> int:
     """Rough token estimate from data folder file sizes. ~0.4 tokens/byte for Korean text."""
-    _TEXT_EXTS = {".txt", ".md", ".rst", ".csv", ".hwpx", ".docx", ".pptx"}
-    _BINARY_EXTS = {".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
+    _TEXT_EXTS = {".txt", ".md", ".rst", ".csv", ".hwpx", ".docx"}
+    _BINARY_EXTS = {".pdf"}
     total_bytes = 0
     for f in folder.rglob("*"):
         if not f.is_file():
@@ -1095,7 +1077,7 @@ class DocPilot:
                 detail=(
                     f"{data_folder} 에서 지원하는 파일을 찾지 못했거나 "
                     "모든 파일의 수집(ingestion)에 실패했습니다. "
-                    "지원 형식: .txt .md .csv .hwpx .docx .pdf .pptx .jpg .png 등"
+                    "지원 형식: .txt .md .csv .hwpx .hwp .docx .pdf"
                 ),
             )
 
