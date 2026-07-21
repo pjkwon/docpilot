@@ -21,7 +21,8 @@ def _com_convert(path: Path, output: Path, save_format: str, label: str) -> Path
         import pyhwpx
     except ImportError as e:
         raise ConversionError(
-            "pyhwpx가 필요합니다: pip install docpilot[hwp]"
+            "pyhwpx가 필요합니다: pip install pyhwpx — core dependency라 "
+            "정상적인 docpilot 설치 환경에서는 보통 발생하지 않는 상황입니다"
         ) from e
 
     output.parent.mkdir(parents=True, exist_ok=True)

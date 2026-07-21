@@ -29,7 +29,8 @@ def ingest(path: str | Path) -> IngestedDocument:
         import pyhwpx
     except ImportError as e:
         raise IngestionError(
-            "pyhwpx is required: pip install docpilot[hwp]"
+            "pyhwpx is required: pip install pyhwpx — core dependency, "
+            "normally already installed with docpilot"
         ) from e
 
     from docpilot.ingestion import hwpx as hwpx_ing

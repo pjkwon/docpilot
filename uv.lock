@@ -710,7 +710,6 @@ all = [
     { name = "pillow" },
     { name = "psycopg2-binary" },
     { name = "pytesseract" },
-    { name = "python-docx" },
     { name = "reportlab" },
     { name = "voyageai" },
 ]
@@ -721,14 +720,8 @@ dev = [
     { name = "pytest" },
     { name = "pytest-mock" },
 ]
-docx = [
-    { name = "python-docx" },
-]
 gemini = [
     { name = "google-genai" },
-]
-hwp = [
-    { name = "pyhwpx" },
 ]
 mcp = [
     { name = "mcp", extra = ["cli"] },
@@ -780,14 +773,11 @@ requires-dist = [
     { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9" },
     { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9" },
     { name = "pyhwpx", specifier = ">=1.7.2" },
-    { name = "pyhwpx", marker = "extra == 'hwp'", specifier = ">=0.2" },
     { name = "pytesseract", marker = "extra == 'all'", specifier = ">=0.3" },
     { name = "pytesseract", marker = "extra == 'pdf'", specifier = ">=0.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.0" },
     { name = "python-docx", specifier = ">=1.2.0" },
-    { name = "python-docx", marker = "extra == 'all'", specifier = ">=1.1" },
-    { name = "python-docx", marker = "extra == 'docx'", specifier = ">=1.1" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "reportlab", marker = "extra == 'all'", specifier = ">=4.0" },
     { name = "reportlab", marker = "extra == 'pdf'", specifier = ">=4.0" },
@@ -797,7 +787,7 @@ requires-dist = [
     { name = "voyageai", marker = "extra == 'all'", specifier = ">=0.3" },
     { name = "voyageai", marker = "extra == 'voyage'", specifier = ">=0.3" },
 ]
-provides-extras = ["pdf", "hwp", "docx", "openai", "gemini", "voyage", "bge", "postgres", "mcp", "all", "dev"]
+provides-extras = ["pdf", "openai", "gemini", "voyage", "bge", "postgres", "mcp", "all", "dev"]
 
 [package.metadata.requires-dev]
 dev = [

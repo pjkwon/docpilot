@@ -35,7 +35,7 @@ pip install "docpilot[mcp] @ git+https://github.com/pjkwon/docpilot.git"
 pip install "docpilot[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
 ```
 
-> **형태소(kiwipiepy) 검색과 벡터 검색(sqlite-vec + 기본 임베딩 `multilingual-e5-base`)은 core dependencies입니다.** `pip install docpilot`만 해도 별도 extras 없이 하이브리드(형태소+벡터) 검색이 바로 동작합니다. 아래 extras는 그 외 파일 포맷·LLM 제공자·대체 임베딩 등 선택 기능용입니다.
+> **형태소(kiwipiepy) 검색, 벡터 검색(sqlite-vec + 기본 임베딩 `multilingual-e5-base`), DOCX 읽기/쓰기(`python-docx`), 한컴오피스 COM 연동(`pyhwpx`)은 모두 core dependencies입니다.** `pip install docpilot`만 해도 별도 extras 없이 하이브리드 검색과 DOCX·HWP 변환이 바로 동작합니다(단, HWP↔DOCX/HWPX 변환 자체는 Windows에 한컴오피스(한글)가 실제로 설치되어 있어야 합니다 — 이건 pip으로 설치할 수 없는 별도 라이선스 프로그램입니다). 아래 extras는 그 외 파일 포맷·LLM 제공자·대체 임베딩 등 선택 기능용입니다.
 
 ### Extras
 
@@ -43,8 +43,6 @@ pip install "docpilot[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
 
 ```bash
 pip install "docpilot[pdf]"       # PDF 읽기/쓰기 (OCR 포함)
-pip install "docpilot[hwp]"       # HWP 읽기 (한컴오피스 설치 필요)
-pip install "docpilot[docx]"         # DOCX 읽기/쓰기/템플릿 생성
 pip install "docpilot[openai]"    # OpenAI GPT / Grok / Ollama + 임베딩
 pip install "docpilot[gemini]"    # Google Gemini
 pip install "docpilot[voyage]"    # Voyage AI 임베딩 (한국어 우수)
@@ -57,7 +55,7 @@ pip install "docpilot[all]"       # 전체 설치
 복합 설치 예시:
 
 ```bash
-pip install "docpilot[pdf,hwp,docx]"                   # 모든 파일 형식
+pip install "docpilot[pdf]"                            # 전체 파일 포맷 (나머지는 이미 core)
 pip install "docpilot[openai,bge]"                     # OpenAI LLM + 고품질 로컬 임베딩
 pip install "docpilot[pdf,openai,postgres]"            # 풀 스택
 ```
@@ -70,7 +68,7 @@ pip install "docpilot[pdf,openai,postgres]"            # 풀 스택
 |------|------|-------------|------|
 | [Tesseract](https://github.com/tesseract-ocr/tesseract) | PDF(스캔본) OCR | `[pdf]` | [설치 가이드](https://tesseract-ocr.github.io/tessdoc/Installation.html) |
 | [Poppler](https://poppler.freedesktop.org/) | PDF → 이미지 변환 | `[pdf]` | Windows: `winget install poppler` |
-| 한컴오피스 (한글) | HWP → HWPX 변환, HWP/HWPX → DOCX 변환 (COM 자동화) | `[hwp]` | Windows 전용, 별도 라이선스 필요 |
+| 한컴오피스 (한글) | HWP → HWPX 변환, HWP/HWPX → DOCX 변환 (COM 자동화) | 없음 — Python 패키지(`pyhwpx`)는 core, 한글 앱 자체만 별도 설치 | Windows 전용, 별도 라이선스 필요 |
 
 ### 알려진 이슈
 
@@ -171,14 +169,13 @@ pilot.generate(
 
 ## 데이터 인덱싱
 
-**내장 지원** (추가 설치 없음): `.txt` `.md` `.rst` `.csv` `.hwpx` `.docx`
+**내장 지원** (pip extras 불필요): `.txt` `.md` `.rst` `.csv` `.hwpx` `.docx`. `.hwp`도 Python 패키지는 core라 pip extra는 불필요하지만, 한컴오피스(한글) 앱 자체가 별도로 설치되어 있어야 합니다 (COM 자동화, Windows 전용).
 
 **extras 필요:**
 
 | 형식 | 확장자 | 필요 extras | 비고 |
 |------|--------|-------------|------|
 | PDF | `.pdf` | `[pdf]` | OCR 폴백 포함 (Tesseract + Poppler 필요) |
-| HWP | `.hwp` | `[hwp]` | 한컴오피스 설치 필요 (COM 자동화) |
 
 ```python
 pilot.index("./data")   # 폴더 내 모든 지원 파일을 재귀적으로 인덱싱

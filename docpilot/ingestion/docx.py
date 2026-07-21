@@ -18,7 +18,10 @@ def ingest(path: str | Path) -> IngestedDocument:
     try:
         from docx import Document
     except ImportError as e:
-        raise IngestionError("python-docx is required: pip install \"docpilot[docx]\"") from e
+        raise IngestionError(
+            "python-docx is required: pip install python-docx — core dependency, "
+            "normally already installed with docpilot"
+        ) from e
 
     try:
         doc = Document(str(path))
