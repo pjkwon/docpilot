@@ -1031,7 +1031,7 @@ class DocPilot:
             if mode in ("bm25", "hybrid") and "kiwipiepy" in str(e):
                 warnings.warn(
                     f"kiwipiepy 미설치로 exact 검색으로 대체합니다 (형태소 검색을 쓰려면 "
-                    f'pip install "docpilot[morpheme]"): {e}',
+                    f"pip install kiwipiepy — 기본 설치에 포함되므로 보통은 발생하지 않는 상황입니다): {e}",
                     stacklevel=2,
                 )
                 results = exact.search(query, top_k=top_k, filters=filters)

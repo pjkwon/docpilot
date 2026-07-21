@@ -218,9 +218,9 @@ def default_embed_fn() -> "EmbedFn | None":
     cached locally (~560 MB). Subsequent calls reuse the cached model.
 
     Returns ``None`` when sentence-transformers is not installed — callers should
-    treat ``None`` as "no vector search available" and fall back to BM25.
-
-    Install: ``pip install "docpilot[vec]"``
+    treat ``None`` as "no vector search available" and fall back to BM25. sentence-
+    transformers + sqlite-vec are core dependencies, so this normally only happens
+    if they were deliberately removed from the environment.
     """
     try:
         from sentence_transformers import SentenceTransformer  # noqa: F401

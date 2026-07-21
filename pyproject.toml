@@ -29,8 +29,11 @@ dependencies = [
     "sqlalchemy>=2.0",
     "anthropic>=0.25",
     "python-docx>=1.2.0",
+    # sentence-transformers + sqlite-vec: default embedding (multilingual-e5-base) + SQLite
+    # vector backend, both core — hybrid search works with a bare `pip install docpilot`.
     "sentence-transformers>=5.5.1",
     "pyhwpx>=1.7.2",
+    # kiwipiepy: morpheme (BM25/FTS5) search, also core for the same reason.
     "kiwipiepy>=0.23.1",
     "sqlite-vec>=0.1.9",
 ]
@@ -50,8 +53,6 @@ docx     = ["python-docx>=1.1"]
 audio-openai = ["openai>=1.0"]
 audio-local  = ["faster-whisper>=1.2.1"]
 audio        = ["faster-whisper>=1.2.1"]
-morpheme  = ["kiwipiepy>=0.18"]
-vec       = ["sqlite-vec>=0.1"]
 openai    = ["openai>=1.0"]
 gemini    = ["google-genai>=1.0"]
 voyage    = ["voyageai>=0.3"]
@@ -63,8 +64,6 @@ all       = [
     "pdfplumber>=0.11", "pdf2image>=1.17", "Pillow>=10.0", "pytesseract>=0.3", "reportlab>=4.0",
     "python-pptx>=1.0",
     "python-docx>=1.1",
-    "kiwipiepy>=0.18",
-    "sqlite-vec>=0.1",
     "openai>=1.0",
     "google-genai>=1.0",
     "voyageai>=0.3",

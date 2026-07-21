@@ -35,6 +35,8 @@ pip install "docpilot[mcp] @ git+https://github.com/pjkwon/docpilot.git"
 pip install "docpilot[pdf,mcp] @ git+https://github.com/pjkwon/docpilot.git"
 ```
 
+> **형태소(kiwipiepy) 검색과 벡터 검색(sqlite-vec + 기본 임베딩 `multilingual-e5-base`)은 core dependencies입니다.** `pip install docpilot`만 해도 별도 extras 없이 하이브리드(형태소+벡터) 검색이 바로 동작합니다. 아래 extras는 그 외 파일 포맷·LLM 제공자·대체 임베딩 등 선택 기능용입니다.
+
 ### Extras
 
 필요한 기능에 따라 extras를 추가하세요. (아래 예시는 PyPI 기준, GitHub 설치 시 `@ git+https://github.com/wynterkwon/docpilot.git` 추가)
@@ -47,13 +49,11 @@ pip install "docpilot[image]"        # 이미지 읽기 (JPG, PNG 등)
 pip install "docpilot[docx]"         # DOCX 읽기/쓰기/템플릿 생성
 pip install "docpilot[audio]"        # 음성 전사 — faster-whisper (로컬, 무료)
 pip install "docpilot[audio-openai]" # 음성 전사 — OpenAI Whisper API
-pip install "docpilot[morpheme]"     # 형태소 기반 한국어 검색
-pip install "docpilot[vec]"       # 벡터 임베딩 검색
 pip install "docpilot[openai]"    # OpenAI GPT / Grok / Ollama + 임베딩
 pip install "docpilot[gemini]"    # Google Gemini
 pip install "docpilot[voyage]"    # Voyage AI 임베딩 (한국어 우수)
-pip install "docpilot[bge]"       # BGE 로컬 임베딩 (BAAI/bge-m3, 한국어 우수)
-pip install "docpilot[sentence]"  # sentence-transformers 로컬 임베딩
+pip install "docpilot[bge]"       # BGE 로컬 임베딩 (BAAI/bge-m3, 한국어 더 우수하지만 ~2GB)
+pip install "docpilot[sentence]"  # sentence-transformers 임베딩 — 기본 모델 외 다른 모델 지정 시
 pip install "docpilot[postgres]"  # PostgreSQL + pgvector (대용량)
 pip install "docpilot[mcp]"       # Claude 앱 MCP 서버
 pip install "docpilot[all]"       # 전체 설치
@@ -63,9 +63,8 @@ pip install "docpilot[all]"       # 전체 설치
 
 ```bash
 pip install "docpilot[pdf,hwp,pptx,image,docx]"       # 모든 파일 형식
-pip install "docpilot[openai,vec]"                     # OpenAI LLM + 임베딩 + 벡터 검색
-pip install "docpilot[bge,vec]"                        # 로컬 임베딩 + 벡터 검색 (API 키 불필요)
-pip install "docpilot[pdf,openai,morpheme,postgres]"   # 풀 스택
+pip install "docpilot[openai,bge]"                     # OpenAI LLM + 고품질 로컬 임베딩
+pip install "docpilot[pdf,openai,postgres]"            # 풀 스택
 ```
 
 ### 시스템 의존성
@@ -668,7 +667,7 @@ pilot.generate_template(samples=[...], output="./templates/my_report.docx", use_
 
 형태소 exact match로 찾은 청크와 의미적으로 유사한 청크(유의어 포함)를 함께 포착해 순위를 병합합니다.
 
-`pip install "docpilot[vec]"` 설치 시 `multilingual-e5-base` 로컬 모델이 자동으로 사용됩니다. 벡터 기능 없이 설치하면 형태소 AND → OR 폴백으로 동작합니다.
+`multilingual-e5-base` 로컬 모델이 core dependency라 `pip install docpilot`만으로 자동 사용됩니다. `sentence-transformers`나 `sqlite-vec`를 별도로 제거한 환경이라면 형태소 AND → OR 폴백으로 동작합니다.
 
 #### top_k 조정 — 문서 유형별 컨텍스트 튜닝
 
@@ -692,7 +691,7 @@ pilot.generate(data_folder="./data", template="proposal", output="./out.hwpx", t
 
 #### DocPilot.search() — 통합 인터페이스
 
-인덱싱 후 `pilot.search()`로 검색할 수 있습니다. `pip install "docpilot[vec]"` 환경에서는 별도 설정 없이 하이브리드 검색이 동작합니다.
+인덱싱 후 `pilot.search()`로 검색할 수 있습니다. 별도 설치 없이 `pip install docpilot`만으로 하이브리드 검색이 바로 동작합니다.
 
 ```python
 # 기본: embed_fn 지정 불필요 — multilingual-e5-base 자동 사용
@@ -724,7 +723,7 @@ from docpilot.search.embedding import default_embed_fn
 # 하이브리드 — BM25 + Vector → RRF 병합
 results = hybrid("사업 계획", embed_fn=default_embed_fn(), top_k=10)
 
-# 형태소 기반 검색 — pip install "docpilot[morpheme]"
+# 형태소 기반 검색 — kiwipiepy는 core dependency라 별도 설치 불필요
 # SQLite: FTS5 역인덱스 + BM25 랭킹 / PostgreSQL: Jaccard 유사도
 results = morpheme.search("사업 계획", or_fallback=True)
 
@@ -852,7 +851,7 @@ print(report)
 docpilot은 벡터 검색(RAG)에 사용할 임베딩 제공자를 자유롭게 선택할 수 있습니다.  
 `DocPilot(embed_fn=...)` 또는 `embedding.search(embed_fn=...)`에 팩토리 함수를 전달합니다.
 
-`pip install "docpilot[vec]"` 설치 시 `DocPilot()`은 별도 설정 없이 `multilingual-e5-base` 로컬 모델을 기본으로 사용합니다.
+`DocPilot()`은 별도 설정·설치 없이 `multilingual-e5-base` 로컬 모델을 기본으로 사용합니다 (core dependency).
 
 ### API 방식 (외부 서비스 호출)
 
@@ -879,14 +878,14 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 | 제공자 | 팩토리 함수 | 기본 모델 | 크기 | 필요 패키지 | 비고 |
 |--------|------------|-----------|------|------------|------|
-| 기본 내장 | `default_embed_fn()` | `intfloat/multilingual-e5-base` | ~560MB | `[vec]` | zero-config, 768차원 |
+| 기본 내장 | `default_embed_fn()` | `intfloat/multilingual-e5-base` | ~560MB | core (기본 설치 포함) | zero-config, 768차원 |
 | BGE (BAAI) | `bge_embed_fn()` | `BAAI/bge-m3` | ~2GB | `[bge]` | 최고 품질, 1024차원 |
 | sentence-transformers | `sentence_embed_fn()` | `intfloat/multilingual-e5-base` | ~560MB | `[sentence]` | 모델 지정 가능 |
 
 ```python
 from docpilot.search.embedding import default_embed_fn, bge_embed_fn, sentence_embed_fn
 
-# 기본 — pip install "docpilot[vec]" / 설정 불필요
+# 기본 — core dependency, 별도 설치·설정 불필요
 # DocPilot()은 자동으로 이 함수를 사용 (명시적으로 전달할 필요 없음)
 embed_fn = default_embed_fn()                                   # multilingual-e5-base, 768차원, ~560MB
 
@@ -1128,7 +1127,7 @@ report 템플릿에 어떤 섹션이 있는지 보여줘.
 
 | 값 | 모델 | 필요 패키지 | 비고 |
 |----|------|------------|------|
-| (미설정) | `intfloat/multilingual-e5-base` | `[vec]` | 기본값, 768차원 |
+| (미설정) | `intfloat/multilingual-e5-base` | core (기본 설치 포함) | 기본값, 768차원 |
 | `bge` | `BAAI/bge-m3` | `[bge]` | 최고 품질, 1024차원 |
 | `bge:cuda` | `BAAI/bge-m3` (GPU) | `[bge]` | GPU 가속 |
 | `openai` | `text-embedding-3-small` | `[openai]` | `OPENAI_API_KEY` 필요 |
