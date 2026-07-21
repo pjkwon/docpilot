@@ -1,4 +1,4 @@
-# docpilot
+# smart-docgen
 
 데이터 폴더와 템플릿을 입력하면 LLM이 내용을 파악해 완성된 문서를 생성하는 파이썬 라이브러리입니다.
 
@@ -84,7 +84,7 @@ pip install "smart-docgen[pdf,openai,postgres]"            # 풀 스택
 
 ## LLM 제공자
 
-docpilot은 5개 LLM 제공자를 지원합니다. `DocPilot(llm=...)` 또는 `DOCPILOT_LLM` 환경변수로 선택합니다.
+smart-docgen은 5개 LLM 제공자를 지원합니다. `DocPilot(llm=...)` 또는 `DOCPILOT_LLM` 환경변수로 선택합니다.
 
 | 제공자 | `llm=` 값 | 기본 모델 | 필요 환경변수 | 추가 패키지 |
 |--------|-----------|-----------|--------------|-------------|
@@ -210,7 +210,7 @@ result = suggest_extras("./data")
 print(result["found"])            # {'.pdf': 3, '.hwpx': 2, '.txt': 5, '.xlsx': 1}
 print(result["required_extras"])  # ['pdf']
 print(result["install_command"])  # pip install "smart-docgen[pdf]"
-print(result["unsupported"])      # {'.xlsx': 1}  ← docpilot이 처리할 수 없는 형식
+print(result["unsupported"])      # {'.xlsx': 1}  ← smart-docgen이 처리할 수 없는 형식
 ```
 
 `DocPilot` 인스턴스를 통해서도 동일하게 사용할 수 있습니다.
@@ -221,7 +221,7 @@ result = DocPilot.suggest_extras("./data")
 
 ## 템플릿 작성 방법
 
-한글(HWPX), Word(DOCX), PDF 파일을 직접 만들고, 내용이 들어갈 위치에 `{{섹션명}}` 플레이스홀더를 삽입합니다. docpilot이 데이터 폴더를 검색해 각 섹션에 맞는 내용을 생성하고 플레이스홀더를 교체합니다.
+한글(HWPX), Word(DOCX), PDF 파일을 직접 만들고, 내용이 들어갈 위치에 `{{섹션명}}` 플레이스홀더를 삽입합니다. smart-docgen이 데이터 폴더를 검색해 각 섹션에 맞는 내용을 생성하고 플레이스홀더를 교체합니다.
 
 ```
 {{서론}}
@@ -287,7 +287,7 @@ LLM이 생성한 내용에 `\n`이 포함되면 해당 위치에 단락이 자�
 {{?첨부파일3}}
 ```
 
-docpilot은 이 세 플레이스홀더를 자동으로 `첨부파일` 리스트(`group_max=3`)로 합쳐 처리합니다.  
+smart-docgen은 이 세 플레이스홀더를 자동으로 `첨부파일` 리스트(`group_max=3`)로 합쳐 처리합니다.  
 실제 첨부 파일이 1개라면 두 번째·세 번째 단락은 자동으로 제거됩니다.
 
 #### 기존 템플릿에서 변환
@@ -337,7 +337,7 @@ convert_to_list_placeholder("template.docx", keys=["항목", "발표자"])
 
 ### 플레이스홀더 없는 파일을 양식으로 사용하기 (Reference Mode)
 
-`{{섹션명}}`이 없는 일반 문서 파일도 `template`에 그대로 넘길 수 있습니다. docpilot이 파일 내용을 읽어 LLM으로 섹션 구조를 자동 추론하고, 해당 구조로 문서를 생성합니다.
+`{{섹션명}}`이 없는 일반 문서 파일도 `template`에 그대로 넘길 수 있습니다. smart-docgen이 파일 내용을 읽어 LLM으로 섹션 구조를 자동 추론하고, 해당 구조로 문서를 생성합니다.
 
 ```python
 # 플레이스홀더 없는 기존 문서를 양식 참조로 사용
@@ -835,7 +835,7 @@ print(report)
 
 ## 임베딩 제공자
 
-docpilot은 벡터 검색(RAG)에 사용할 임베딩 제공자를 자유롭게 선택할 수 있습니다.  
+smart-docgen은 벡터 검색(RAG)에 사용할 임베딩 제공자를 자유롭게 선택할 수 있습니다.  
 `DocPilot(embed_fn=...)` 또는 `embedding.search(embed_fn=...)`에 팩토리 함수를 전달합니다.
 
 `DocPilot()`은 별도 설정·설치 없이 `multilingual-e5-base` 로컬 모델을 기본으로 사용합니다 (core dependency).
@@ -902,12 +902,12 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 정확한 검색 품질 벤치마크 수치는 모델마다·태스크마다 달라 여기서 단정하지 않습니다. 필요하면 [MTEB 리더보드](https://huggingface.co/spaces/mteb/leaderboard)에서 두 모델을 직접 비교하세요.
 
-다만 docpilot 기본 설정에서 확인 가능한 제약이 하나 있습니다. 인덱싱 기본 청크 크기는 문자 기준 1000자(`docpilot/db/indexer.py`의 `_CHUNK_SIZE`)인데, 한글은 토큰당 대략 1.5~2자라 청크에 따라 500~700토큰대가 나올 수 있습니다. e5-base는 512토큰이 한도라 이런 청크는 초과분이 **에러 없이 조용히 잘려서** 인코딩됩니다. BGE-m3는 8192토큰이라 이 문제가 없습니다. 청크가 자주 긴 데이터(회의록 전문, 긴 조항형 문서 등)를 다룬다면 BGE-m3 쪽이 안전합니다.
+다만 smart-docgen 기본 설정에서 확인 가능한 제약이 하나 있습니다. 인덱싱 기본 청크 크기는 문자 기준 1000자(`docpilot/db/indexer.py`의 `_CHUNK_SIZE`)인데, 한글은 토큰당 대략 1.5~2자라 청크에 따라 500~700토큰대가 나올 수 있습니다. e5-base는 512토큰이 한도라 이런 청크는 초과분이 **에러 없이 조용히 잘려서** 인코딩됩니다. BGE-m3는 8192토큰이라 이 문제가 없습니다. 청크가 자주 긴 데이터(회의록 전문, 긴 조항형 문서 등)를 다룬다면 BGE-m3 쪽이 안전합니다.
 
 ### 커스텀 임베딩
 
 `Callable[[str], list[float]]` 인터페이스를 맞추면 어떤 임베딩 모델이든 연결할 수 있습니다.  
-인덱싱 성능을 높이려면 리스트 입력도 지원하도록 구현하세요 — docpilot이 자동으로 배치 호출합니다.
+인덱싱 성능을 높이려면 리스트 입력도 지원하도록 구현하세요 — smart-docgen이 자동으로 배치 호출합니다.
 
 ```python
 # 기본: 단일 텍스트만 처리 (인덱싱 시 청크 수만큼 반복 호출)

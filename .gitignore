@@ -33,6 +33,7 @@ htmlcov/
 # Internal docs
 *.md
 !README.md
+!CHANGELOG.md
 !.claude/skills/**/*.md
 
 # Test artifacts
