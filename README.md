@@ -629,7 +629,7 @@ pilot.generate(data_folder="./data", template="my_report", output="./out.hwpx")
 pilot.generate(data_folder="./data", template="my_report", output="./out.docx")
 ```
 
-> 템플릿 탐색 순서: 파일 경로 → 내장 이름(`report`/`gonmun`/`minutes`) → `./templates/` 폴더 → DB 저장 템플릿
+> 템플릿 탐색 순서: 파일 경로 → 내장 이름(`report`/`gonmun`/`minutes`/`proposal`) → `./templates/` 폴더 → DB 저장 템플릿
 
 공통 섹션 신뢰도가 낮으면 LLM 보조를 활성화해 더 정확하게 추출합니다.
 
@@ -1185,6 +1185,7 @@ from docpilot.exceptions import (
     IngestionError,
     MappingError,
     BuilderError,
+    ConversionError,
     SearchError,
     TemplateError,
 )
