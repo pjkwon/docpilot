@@ -151,14 +151,7 @@ def index_folder(
     """
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
-    from docpilot.ingestion import text as text_ing
-    from docpilot.ingestion import pdf as pdf_ing
-    from docpilot.ingestion import image as image_ing
-    from docpilot.ingestion import pptx as pptx_ing
-    from docpilot.ingestion import hwpx as hwpx_ing
-    from docpilot.ingestion import hwp as hwp_ing
-    from docpilot.ingestion import docx as docx_ing
-    from docpilot.ingestion import audio as audio_ing
+    from docpilot.ingestion import _ingesters_table
     from docpilot.exceptions import IngestionError
 
     import sys
@@ -167,16 +160,7 @@ def index_folder(
     if not folder.is_dir():
         raise SearchError("Not a directory", detail=str(folder))
 
-    ingesters = {
-        **{ext: text_ing.ingest for ext in text_ing.SUPPORTED_EXTENSIONS},
-        ".pdf": pdf_ing.ingest,
-        **{ext: image_ing.ingest for ext in image_ing.SUPPORTED_EXTENSIONS},
-        ".pptx": pptx_ing.ingest,
-        ".hwpx": hwpx_ing.ingest,
-        ".hwp": hwp_ing.ingest,
-        ".docx": docx_ing.ingest,
-        **{ext: audio_ing.ingest for ext in audio_ing.SUPPORTED_SUFFIXES},
-    }
+    ingesters = _ingesters_table()
 
     files_filter: set[str] | None = (
         {f.lower() for f in files} if files is not None else None

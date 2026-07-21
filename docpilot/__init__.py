@@ -4,6 +4,7 @@ import atexit
 import os
 import re
 from importlib.metadata import version, PackageNotFoundError
+from typing import TYPE_CHECKING
 
 try:
     __version__ = version("docpilot")
@@ -17,6 +18,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from docpilot.exceptions import BuilderError, DocPilotError, MappingError
+
+if TYPE_CHECKING:
+    from docpilot.ingestion.models import IngestedDocument
 
 load_dotenv()
 
@@ -267,6 +271,83 @@ def _estimate_tokens_from_folder(folder: Path, n_sections: int) -> int:
     raw_tokens = int(total_bytes * tokens_per_byte)
     # RAG retrieves a subset, not the full corpus — cap at ~4,000 tokens per section
     return min(raw_tokens, n_sections * 4000)
+
+
+_DEFAULT_MAX_INPUT_TOKENS_WARN = 50_000
+
+
+def _estimate_tokens_raw(text: str) -> int:
+    """Rough token estimate for text that goes into the prompt in full — no RAG retrieval
+    subset, so (unlike _estimate_tokens_from_folder) no per-section cap applies."""
+    return int(len(text.encode("utf-8")) * 0.4)
+
+
+def _resolve_instructions(
+    extra_instructions: str | None,
+    sidecar_instructions: str,
+    instructions_doc: str | Path | None,
+) -> str | None:
+    """Merge sidecar instructions + instructions_doc content into extra_instructions.
+
+    Priority: instructions_doc is prepended last (highest priority — read in full,
+    unlike sidecar/extra which are just strings), sidecar next, caller's extra_instructions last.
+    """
+    if sidecar_instructions:
+        extra_instructions = (
+            f"{sidecar_instructions}\n\n{extra_instructions}"
+            if extra_instructions
+            else sidecar_instructions
+        )
+
+    if instructions_doc is not None:
+        doc_text = _ingest_instructions_doc(Path(instructions_doc))
+        if doc_text:
+            header = f"[지침 문서: {Path(instructions_doc).name}]\n{doc_text}"
+            extra_instructions = (
+                f"{header}\n\n{extra_instructions}" if extra_instructions
+                else header
+            )
+
+    return extra_instructions
+
+
+def _resolve_content(content: str | list[str | Path] | list[IngestedDocument]) -> str:
+    """Resolve the content union type shared by *_from_content() methods into a single string."""
+    from docpilot.ingestion.models import IngestedDocument
+    from docpilot.mapping.base import merge_documents
+
+    if isinstance(content, str):
+        return content
+    if content and isinstance(content[0], IngestedDocument):
+        return merge_documents(content)
+
+    from docpilot.ingestion import ingest_paths
+    docs = ingest_paths(content)
+    if not docs:
+        raise DocPilotError("content에서 ingest 가능한 파일을 찾지 못했습니다.", detail=str(content))
+    return merge_documents(docs)
+
+
+def _check_content_size(content_str: str, max_input_tokens: int | None) -> None:
+    """Warn or raise on a rough byte-based token estimate — *_from_content() methods send
+    content in full with no RAG top_k to bound its size automatically."""
+    estimated_tokens = _estimate_tokens_raw(content_str)
+    if max_input_tokens is not None:
+        if estimated_tokens > max_input_tokens:
+            raise MappingError(
+                f"콘텐츠 예상 입력 토큰 수({estimated_tokens:,})가 "
+                f"max_input_tokens({max_input_tokens:,})를 초과합니다.",
+                detail="content 크기를 줄이거나 max_input_tokens를 늘리세요.",
+            )
+    elif estimated_tokens > _DEFAULT_MAX_INPUT_TOKENS_WARN:
+        import warnings
+        warnings.warn(
+            f"콘텐츠 예상 입력 토큰 수가 {estimated_tokens:,}로 큽니다 "
+            f"(경고 기준: {_DEFAULT_MAX_INPUT_TOKENS_WARN:,}). RAG와 달리 이 경로는 "
+            "content를 통째로 프롬프트에 넣으므로 컨텍스트 초과·비용 증가 위험이 있습니다. "
+            "content를 줄이거나 max_input_tokens로 명시적 상한을 거세요.",
+            stacklevel=2,
+        )
 
 
 def _extract_placeholders(template_path: Path) -> list[str]:
@@ -528,6 +609,49 @@ def _infer_sections_from_content(content: str, mapper) -> list[str]:
     return []
 
 
+def _apply_reference_mode(template_path: Path, mapper) -> tuple[Path, list]:
+    """
+    Infer section structure via LLM from a placeholder-less reference document, then
+    inject {{placeholder}}s into a temp copy of it. Costs one extra LLM call (structure
+    inference) beyond the normal content-mapping call.
+
+    Returns (new_template_path, sections). Raises DocPilotError if the content can't be
+    read or the LLM fails to infer any section names.
+    """
+    from docpilot.mapping.base import TemplateSection
+    from docpilot.template_generator.generator import _build_template, _build_docx_template
+
+    ref_content = _ingest_instructions_doc(template_path)
+    if not ref_content:
+        raise DocPilotError(
+            "No {{placeholders}} found and could not read template content",
+            detail=str(template_path),
+        )
+    placeholder_names = _infer_sections_from_content(ref_content, mapper)
+    if not placeholder_names:
+        raise DocPilotError(
+            "No {{placeholders}} found and LLM could not infer sections",
+            detail=str(template_path),
+        )
+
+    ref_ext = template_path.suffix.lower()
+    tpl_suffix = ref_ext if ref_ext in (".hwpx", ".docx") else ".hwpx"
+    tmp = tempfile.NamedTemporaryFile(suffix=tpl_suffix, delete=False)
+    tmp.close()
+    tmp_tpl = Path(tmp.name)
+    atexit.register(lambda p=tmp_tpl: p.unlink(missing_ok=True))
+
+    if ref_ext == ".docx":
+        _build_docx_template(template_path, placeholder_names, tmp_tpl)
+    elif ref_ext == ".hwpx":
+        _build_template(template_path, placeholder_names, tmp_tpl)
+    else:
+        # Non-buildable format (PDF, TXT …): use built-in report as base
+        _build_template(_assemble_builtin_hwpx("report"), placeholder_names, tmp_tpl)
+
+    return tmp_tpl, [TemplateSection(name=s) for s in placeholder_names]
+
+
 def _sidecar_source(template: str | Path) -> Path:
     """
     Path to resolve sidecar.json against.
@@ -675,31 +799,40 @@ def _resolve_sections(
     template: str | Path,
     template_path: Path,
     db_sections_meta: dict,
-) -> tuple[list, str]:
+    mapper=None,
+) -> tuple[Path, list, str]:
     """
-    Extract + merge section metadata for a template — no LLM/RAG call.
+    Extract + merge section metadata for a template.
 
     template:      the original name/path passed by the caller — used to locate sidecar.json,
                     since built-in templates resolve to a temp-assembled file (see _sidecar_source).
     template_path: the resolved, readable template file (from _resolve_template_path).
+    mapper:        if given, a placeholder-less reference document triggers LLM-based section
+                    inference (Reference Mode — one extra LLM call) instead of raising. If None
+                    (default; used by describe_template()/fill_template(), which stay LLM-free),
+                    raises DocPilotError instead.
 
-    Raises DocPilotError if the template has no {{placeholders}}; reference-mode
-    LLM inference (for marker-less documents) is only available via DocPilot.generate().
+    Returns (template_path, sections, instructions). template_path is reassigned only when
+    Reference Mode ran (it then points at the generated temp template).
     """
     sections = _extract_placeholder_sections(template_path)
     if not sections:
-        raise DocPilotError(
-            "템플릿에서 {{placeholder}}를 찾을 수 없습니다.",
-            detail=(
-                f"{template_path} — 플레이스홀더가 없는 참조 문서는 generate_template()으로 "
-                "먼저 템플릿을 만드세요."
-            ),
-        )
+        if mapper is None:
+            raise DocPilotError(
+                "템플릿에서 {{placeholder}}를 찾을 수 없습니다.",
+                detail=(
+                    f"{template_path} — 플레이스홀더가 없는 참조 문서는 generate_template()으로 "
+                    "먼저 템플릿을 만들거나, LLM 추론을 지원하는 generate()/generate_from_content()를 "
+                    "쓰세요."
+                ),
+            )
+        template_path, sections = _apply_reference_mode(template_path, mapper)
+
     from docpilot.mapping.sidecar import load_sidecar
     sidecar = load_sidecar(_sidecar_source(template))
     sections = _merge_section_meta(sections, template_path, sidecar, db_sections_meta)
     instructions = sidecar.instructions if sidecar is not None else ""
-    return sections, instructions
+    return template_path, sections, instructions
 
 
 def describe_template(template: str | Path) -> dict:
@@ -710,7 +843,7 @@ def describe_template(template: str | Path) -> dict:
     descriptions, and a ready-to-copy example dict shape.
     """
     template_path, db_sections_meta = _resolve_template_path(template)
-    sections, instructions = _resolve_sections(template, template_path, db_sections_meta)
+    template_path, sections, instructions = _resolve_sections(template, template_path, db_sections_meta)
 
     example: dict[str, str | list[str]] = {}
     for s in sections:
@@ -751,7 +884,7 @@ def fill_template(
     and warns if any placeholder is left unfilled in the output.
     """
     template_path, db_sections_meta = _resolve_template_path(template)
-    resolved, _ = _resolve_sections(template, template_path, db_sections_meta)
+    template_path, resolved, _ = _resolve_sections(template, template_path, db_sections_meta)
     resolved_names = {s.name for s in resolved}
 
     required_missing = [
@@ -948,21 +1081,11 @@ class DocPilot:
 
         from docpilot.mapping.sidecar import load_sidecar
         _sidecar = load_sidecar(_sidecar_source(template))
-        if _sidecar is not None and _sidecar.instructions:
-            extra_instructions = (
-                f"{_sidecar.instructions}\n\n{extra_instructions}"
-                if extra_instructions
-                else _sidecar.instructions
-            )
-
-        if instructions_doc is not None:
-            doc_text = _ingest_instructions_doc(Path(instructions_doc))
-            if doc_text:
-                header = f"[지침 문서: {Path(instructions_doc).name}]\n{doc_text}"
-                extra_instructions = (
-                    f"{header}\n\n{extra_instructions}" if extra_instructions
-                    else header
-                )
+        extra_instructions = _resolve_instructions(
+            extra_instructions,
+            _sidecar.instructions if _sidecar is not None else "",
+            instructions_doc,
+        )
 
         from docpilot.db import indexer
         doc_ids = indexer.index_folder(data_folder, embed_fn=self._embed_fn, force=reindex)
@@ -976,49 +1099,69 @@ class DocPilot:
                 ),
             )
 
-        sections = _extract_placeholder_sections(template_path)
-        if not sections:
-            # Reference mode: infer sections from document structure via LLM,
-            # then inject {{placeholders}} into the reference doc to create a working template.
-            ref_content = _ingest_instructions_doc(template_path)
-            if not ref_content:
-                raise DocPilotError(
-                    "No {{placeholders}} found and could not read template content",
-                    detail=str(template_path),
-                )
-            placeholder_names = _infer_sections_from_content(ref_content, self._mapper)
-            if not placeholder_names:
-                raise DocPilotError(
-                    "No {{placeholders}} found and LLM could not infer sections",
-                    detail=str(template_path),
-                )
-            from docpilot.mapping.base import TemplateSection
-            from docpilot.template_generator.generator import (
-                _build_template,
-                _build_docx_template,
-            )
-            ref_ext = template_path.suffix.lower()
-            tpl_suffix = ref_ext if ref_ext in (".hwpx", ".docx") else ".hwpx"
-            tmp = tempfile.NamedTemporaryFile(suffix=tpl_suffix, delete=False)
-            tmp.close()
-            tmp_tpl = Path(tmp.name)
-            atexit.register(lambda p=tmp_tpl: p.unlink(missing_ok=True))
-
-            if ref_ext == ".docx":
-                _build_docx_template(template_path, placeholder_names, tmp_tpl)
-            elif ref_ext == ".hwpx":
-                _build_template(template_path, placeholder_names, tmp_tpl)
-            else:
-                # Non-buildable format (PDF, TXT …): use built-in report as base
-                _build_template(_assemble_builtin_hwpx("report"), placeholder_names, tmp_tpl)
-            template_path = tmp_tpl
-            sections = [TemplateSection(name=s) for s in placeholder_names]
-
-        sections = _merge_section_meta(sections, template_path, _sidecar, _db_sections_meta)
+        template_path, sections, _ = _resolve_sections(
+            template, template_path, _db_sections_meta, mapper=self._mapper,
+        )
 
         from docpilot.search.models import SearchFilter
         filters = SearchFilter(source_pattern=f"{Path(data_folder).resolve()}{os.sep}*")
         mapping_result = self._rag_mapper.map(sections, instructions=extra_instructions, top_k=top_k, filters=filters)
+
+        builder = self._build_builder(output_path)
+        out_path = builder.build(template_path, mapping_result.sections, output_path)
+
+        if out_path.suffix.lower() == ".hwpx":
+            _validate_hwpx(out_path)
+
+        return GenerateResult(
+            path=out_path,
+            model=mapping_result.model,
+            input_tokens=mapping_result.input_tokens,
+            output_tokens=mapping_result.output_tokens,
+            elapsed_seconds=mapping_result.elapsed_seconds,
+        )
+
+    def generate_from_content(
+        self,
+        content: str | list[str | Path] | list[IngestedDocument],
+        template: str | Path,
+        output: str | Path,
+        extra_instructions: str | None = None,
+        instructions_doc: str | Path | None = None,
+        max_input_tokens: int | None = None,
+    ) -> GenerateResult:
+        """
+        Fill a template from already-prepared content — no RAG retrieval, no data folder.
+
+        content:            a finished string, a list of IngestedDocuments, or a list of file
+                             paths (ingested directly, no chunking/embedding/DB storage).
+        template:            {{placeholder}} template, or a placeholder-less reference document —
+                             the latter costs one extra LLM call to infer section structure
+                             (Reference Mode, same as generate()).
+        max_input_tokens:    if set, raises MappingError when the estimated input token count
+                             exceeds it. If unset, only warns — RAG's top_k has no equivalent
+                             here, so there's no automatic context-size limit.
+        """
+        template_path, db_sections_meta = self._resolve_template(template)
+        output_path = Path(output)
+
+        if template_path.suffix.lower() == ".docx" and output_path.suffix.lower() == ".hwpx":
+            from docpilot.builder.hwp_convert import convert_to_hwpx
+            _tmp = tempfile.NamedTemporaryFile(suffix=".hwpx", delete=False)
+            _tmp.close()
+            _tmp_path = Path(_tmp.name)
+            atexit.register(lambda p=_tmp_path: p.unlink(missing_ok=True))
+            template_path = convert_to_hwpx(template_path, _tmp_path)
+
+        template_path, sections, sidecar_instructions = _resolve_sections(
+            template, template_path, db_sections_meta, mapper=self._mapper,
+        )
+        extra_instructions = _resolve_instructions(extra_instructions, sidecar_instructions, instructions_doc)
+
+        content_str = _resolve_content(content)
+        _check_content_size(content_str, max_input_tokens)
+
+        mapping_result = self._mapper.map(content_str, sections, instructions=extra_instructions)
 
         builder = self._build_builder(output_path)
         out_path = builder.build(template_path, mapping_result.sections, output_path)
@@ -1124,34 +1267,10 @@ class DocPilot:
         quick=True (default in MCP): file-size based estimate, no indexing or API call.
         quick=False: full indexing + RAG retrieval + token-counting API for accuracy.
         """
-        template_path, _db_sections_meta = self._resolve_template(template)
-
-        sections = _extract_placeholder_sections(template_path)
-        if not sections:
-            raise DocPilotError(
-                "No {{placeholders}} found in template",
-                detail=str(template_path),
-            )
-
-        from docpilot.mapping.sidecar import load_sidecar
-        _sidecar = load_sidecar(_sidecar_source(template))
-        if _sidecar is not None and _sidecar.sections:
-            _sc_map = {s.name: s for s in _sidecar.sections}
-            for _sec in sections:
-                _sc = _sc_map.get(_sec.name)
-                if _sc is None:
-                    continue
-                if not _sec.description and _sc.description:
-                    _sec.description = _sc.description
-                if not _sec.rule and _sc.rule:
-                    _sec.rule = _sc.rule
-        if _db_sections_meta:
-            for _sec in sections:
-                _dm = _db_sections_meta.get(_sec.name, {})
-                if not _sec.description and _dm.get("description"):
-                    _sec.description = _dm["description"]
-                if not _sec.rule and _dm.get("rule"):
-                    _sec.rule = _dm["rule"]
+        template_path, db_sections_meta = self._resolve_template(template)
+        template_path, sections, _ = _resolve_sections(
+            template, template_path, db_sections_meta, mapper=self._mapper,
+        )
 
         model: str = getattr(self._mapper, "_model", "claude-sonnet-4-6")
         in_price, out_price = _MODEL_PRICING.get(model, (3.00, 15.00))
@@ -1204,6 +1323,71 @@ class DocPilot:
         ]
         return "\n".join(lines)
 
+    def estimate_cost_from_content(
+        self,
+        content: str | list[str | Path] | list[IngestedDocument],
+        template: str | Path,
+        quick: bool = False,
+    ) -> str:
+        """
+        Estimate API token cost for generate_from_content() — no indexing, no RAG retrieval.
+
+        quick=True: byte-based heuristic, no API call.
+        quick=False (default): real token-counting API call against the actual content.
+        """
+        template_path, db_sections_meta = self._resolve_template(template)
+        template_path, sections, _ = _resolve_sections(
+            template, template_path, db_sections_meta, mapper=self._mapper,
+        )
+        content_str = _resolve_content(content)
+
+        model: str = getattr(self._mapper, "_model", "claude-sonnet-4-6")
+        in_price, out_price = _MODEL_PRICING.get(model, (3.00, 15.00))
+        est_output = len(sections) * _EST_OUTPUT_TOKENS_PER_SECTION
+
+        if quick:
+            input_tokens = _estimate_tokens_raw(content_str)
+            input_cost = input_tokens / 1_000_000 * in_price
+            output_cost = est_output / 1_000_000 * out_price
+            lines = [
+                "=== docpilot 비용 추정 (빠른 추정, RAG 없음) ===",
+                f"모델:             {model}",
+                f"섹션 수:          {len(sections)}개",
+                f"입력 토큰 (추정): {input_tokens:,}  (바이트 기반, ±30% 오차)",
+                f"출력 토큰 (추정): {est_output:,}  (섹션당 {_EST_OUTPUT_TOKENS_PER_SECTION} 추정)",
+                f"예상 비용:        ${input_cost + output_cost:.4f}",
+                f"  입력 ${in_price:.2f}/1M  →  ${input_cost:.4f}",
+                f"  출력 ${out_price:.2f}/1M  →  ${output_cost:.4f}",
+                "",
+                "정확한 추정: estimate_cost_from_content(quick=False) — 토큰 카운팅 API 사용",
+            ]
+            return "\n".join(lines)
+
+        if not hasattr(self._mapper, "count_tokens"):
+            n = len(sections)
+            return (
+                f"섹션 수: {n}개\n"
+                f"토큰 카운팅은 Claude 매퍼에서만 지원됩니다.\n"
+                f"섹션당 ~3,000 입력 + ~{_EST_OUTPUT_TOKENS_PER_SECTION} 출력 토큰 기준\n"
+                f"대략 {n * 3000:,} 입력 / {n * _EST_OUTPUT_TOKENS_PER_SECTION:,} 출력 예상"
+            )
+
+        input_tokens = self._mapper.count_tokens(content_str, sections)
+        input_cost = input_tokens / 1_000_000 * in_price
+        output_cost = est_output / 1_000_000 * out_price
+
+        lines = [
+            "=== docpilot 비용 추정 (RAG 없음) ===",
+            f"모델:             {model}",
+            f"섹션 수:          {len(sections)}개",
+            f"입력 토큰:        {input_tokens:,}",
+            f"출력 토큰 (추정): {est_output:,}  (섹션당 {_EST_OUTPUT_TOKENS_PER_SECTION} 추정)",
+            f"예상 비용:        ${input_cost + output_cost:.4f}",
+            f"  입력 ${in_price:.2f}/1M  →  ${input_cost:.4f}",
+            f"  출력 ${out_price:.2f}/1M  →  ${output_cost:.4f}",
+        ]
+        return "\n".join(lines)
+
     def benchmark(
         self,
         data_folder: str | Path,
@@ -1213,12 +1397,13 @@ class DocPilot:
     ) -> str:
         """Run mapping benchmark across multiple LLM mappers and return report."""
         from docpilot.mapping import benchmark, ClaudeMapper, OpenAIMapper
-        from docpilot.mapping.base import TemplateSection
 
-        template_path, _ = self._resolve_template(template)
+        template_path, db_sections_meta = self._resolve_template(template)
         self.index(data_folder)
 
-        template_sections = [TemplateSection(name=s) for s in _extract_placeholders(template_path)]
+        template_path, template_sections, _ = _resolve_sections(
+            template, template_path, db_sections_meta, mapper=self._mapper,
+        )
         content = self._rag_mapper.retrieve_content(template_sections)
 
         if mappers is None:
@@ -1228,6 +1413,33 @@ class DocPilot:
                 mappers["openai"] = OpenAIMapper(api_key=oai_key)
 
         results = benchmark.run(content, template_sections, mappers)
+        return benchmark.report(results)
+
+    def benchmark_from_content(
+        self,
+        content: str | list[str | Path] | list[IngestedDocument],
+        template: str | Path,
+        output: str | Path,
+        mappers: dict | None = None,
+        max_input_tokens: int | None = None,
+    ) -> str:
+        """Run mapping benchmark across multiple LLM mappers — no indexing, no RAG retrieval."""
+        from docpilot.mapping import benchmark, ClaudeMapper, OpenAIMapper
+
+        template_path, db_sections_meta = self._resolve_template(template)
+        template_path, template_sections, _ = _resolve_sections(
+            template, template_path, db_sections_meta, mapper=self._mapper,
+        )
+        content_str = _resolve_content(content)
+        _check_content_size(content_str, max_input_tokens)
+
+        if mappers is None:
+            mappers = {"claude": ClaudeMapper(api_key=self._api_key)}
+            oai_key = os.environ.get("OPENAI_API_KEY")
+            if oai_key:
+                mappers["openai"] = OpenAIMapper(api_key=oai_key)
+
+        results = benchmark.run(content_str, template_sections, mappers)
         return benchmark.report(results)
 
     def _resolve_template(self, template: str | Path) -> tuple[Path, dict]:

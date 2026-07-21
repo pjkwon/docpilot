@@ -13,6 +13,7 @@
 - **스타일 인식 생성 (HWPX·DOCX)** — 플레이스홀더 위치의 폰트 크기·정렬·표 셀 너비를 자동 분석해 LLM에 전달, 서식에 어울리는 내용 생성
 - **템플릿 자동 생성 (HWPX·DOCX)** — 샘플 문서에서 공통 섹션 구조 추출 (샘플 스타일 자동 상속)
 - **LLM 벤치마크** — 여러 LLM의 매핑 결과를 나란히 비교
+- **RAG 없이 생성** — 이미 준비된 콘텐츠(문자열·파일 경로·`IngestedDocument`)를 인덱싱·검색 없이 바로 템플릿에 채우기 (`generate_from_content`)
 
 ## 설치
 
@@ -385,6 +386,54 @@ pilot.generate(
 ```
 
 `extra_instructions`(직접 작성한 문자열)와 함께 쓰면 두 내용이 합쳐져서 LLM에 전달됩니다. 지원 형식: `.hwpx`, `.docx`, `.pdf`, `.txt`, `.md` 등.
+
+## RAG 없이 생성하기 (generate_from_content)
+
+이미 준비된 콘텐츠가 있다면 데이터 폴더 인덱싱·RAG 검색 없이 바로 템플릿에 채울 수 있습니다. `generate()`의 `data_folder` 자리에 `content`를 직접 넘깁니다.
+
+```python
+pilot.generate_from_content(
+    content="완성된 원본 텍스트 전체",   # str
+    template="report",
+    output="./output/report.hwpx",
+)
+```
+
+`content`는 세 가지 형태를 받습니다:
+
+| 형태 | 설명 |
+|------|------|
+| `str` | 완성된 문자열을 그대로 프롬프트에 전달 |
+| `list[str \| Path]` | 파일 경로 목록 — 인덱싱 없이 바로 ingest만 수행 (DB에 저장 안 함) |
+| `list[IngestedDocument]` | 이미 ingest된 문서 객체 리스트 — `docpilot.ingestion.ingest_paths()`나 각 포맷 모듈의 `ingest()`로 직접 만들 수 있음 |
+
+```python
+# 파일 몇 개만 골라서 인덱싱 없이 바로 채우고 싶을 때
+pilot.generate_from_content(
+    content=["./notes/meeting.txt", "./notes/summary.md"],
+    template="minutes",
+    output="./output/minutes.hwpx",
+)
+```
+
+**`generate()`와의 차이**: RAG 검색(형태소·벡터 하이브리드)이 없고, `content`로 넘긴 것을 통째로 LLM에 넣어 섹션별로 조직합니다. "무엇을 넣을지"는 호출자가 직접 고르고, "어디에 넣을지"만 LLM이 정합니다.
+
+### 크기 가드 (max_input_tokens)
+
+RAG의 `top_k`처럼 컨텍스트 크기를 자동으로 제한해주는 장치가 없으므로, 콘텐츠가 크면(기본 기준 입력 토큰 약 5만) 경고가 뜹니다. `max_input_tokens`를 명시하면 초과 시 문서를 만들지 않고 에러로 막습니다.
+
+```python
+pilot.generate_from_content(
+    content=big_text,
+    template="report",
+    output="./output/report.hwpx",
+    max_input_tokens=20_000,   # 넘으면 MappingError, 생성 안 함
+)
+```
+
+### placeholder 없는 문서도 지원 (Reference Mode)
+
+`template`에 `{{}}`가 없는 문서를 넘기면 `generate()`와 동일하게 LLM이 문서 구조를 추론해 임시 템플릿을 만들고 이어서 채웁니다 (구조 추론용 LLM 호출이 한 번 더 발생). 반면 `describe_template()`/`fill_template()`(MCP가 쓰는 LLM-free 함수)은 이 기능이 없어 placeholder 없는 템플릿을 그대로 거부합니다.
 
 ## 내장 템플릿
 
@@ -951,6 +1000,20 @@ gemini                      0.00         0          0           0  오류: API k
 
 API 키 누락이나 호출 실패가 발생한 LLM은 오류 상태로 표시되고, 나머지 LLM의 결과는 정상 출력됩니다.
 
+### RAG 없이 벤치마크 (benchmark_from_content)
+
+[generate_from_content](#rag-없이-생성하기-generate_from_content)처럼 인덱싱·RAG 검색 없이, 이미 준비된 콘텐츠로 여러 LLM을 비교합니다. `data_folder` 대신 `content`를 넘기고, `max_input_tokens`로 크기 가드를 걸 수 있습니다(생성 경로와 동일한 가드 — [크기 가드](#크기-가드-max_input_tokens) 참고).
+
+```python
+report = pilot.benchmark_from_content(
+    content="비교할 원본 텍스트",
+    template="./templates/report.hwpx",
+    output="./output/result.hwpx",
+    mappers={"claude": ClaudeMapper(), "openai": OpenAIMapper()},
+)
+print(report)
+```
+
 ## MCP 서버
 
 Claude 앱에서 docpilot 도구를 직접 사용하려면 MCP 서버를 설치하고 연결합니다.
@@ -1102,6 +1165,18 @@ print(report)
 ```
 
 `estimate_cost`는 라이브러리 전용 API입니다 — MCP 서버는 RAG 호출이 없는 `describe_template`/`fill_template` 흐름만 제공하므로 이 도구는 MCP에 노출되어 있지 않습니다.
+
+### RAG 없이 비용 추정 (estimate_cost_from_content)
+
+[generate_from_content](#rag-없이-생성하기-generate_from_content)용 비용 추정입니다. 인덱싱이 없으므로 `quick`의 의미가 조금 다릅니다 — `quick=True`는 바이트 기반 휴리스틱(API 호출 없음), `quick=False`(기본값)는 실제 `content`로 토큰 카운팅 API를 호출합니다.
+
+```python
+report = pilot.estimate_cost_from_content(
+    content="비용을 추정할 원본 텍스트",
+    template="report",
+)
+print(report)
+```
 
 ## 예외 처리
 

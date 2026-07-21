@@ -14,7 +14,12 @@ class MockMapper(BaseLLMMapper):
     def complete(self, prompt: str, max_tokens: int = 2048) -> str:
         return "1"
 
-    def map(self, content: str, sections: list[TemplateSection]) -> MappingResult:
+    def map(
+        self,
+        content: str,
+        sections: list[TemplateSection],
+        instructions: str | None = None,
+    ) -> MappingResult:
         self.calls.append((content, sections))
         return MappingResult(
             sections={s.name: f"[{s.name} 내용]" for s in sections},
