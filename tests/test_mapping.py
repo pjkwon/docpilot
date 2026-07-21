@@ -88,6 +88,26 @@ class TestClaudeMapper:
             with pytest.raises(MappingError, match="API key"):
                 ClaudeMapper(api_key=None)
 
+    def test_map_accepts_instructions_positionally(self):
+        """RagMapper/generate_from_content call mapper.map(content, sections, instructions) —
+        must not raise TypeError, and the instructions text must reach the prompt."""
+        from docpilot.mapping.claude import ClaudeMapper
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text=json.dumps(
+            {"sections": {"서론": "A", "결론": "B"}}
+        ))]
+        mock_response.usage.input_tokens = 10
+        mock_response.usage.output_tokens = 5
+
+        with patch("anthropic.Anthropic") as MockClient:
+            MockClient.return_value.messages.create.return_value = mock_response
+            mapper = ClaudeMapper(api_key="test-key")
+            mapper.map(CONTENT, SECTIONS, "전문 용어는 한국어로 병기하세요")
+
+            sent_prompt = MockClient.return_value.messages.create.call_args.kwargs["messages"][0]["content"]
+        assert "전문 용어는 한국어로 병기하세요" in sent_prompt
+
 
 class TestBenchmark:
     def test_run_returns_results(self):
@@ -171,6 +191,30 @@ class TestGeminiMapper:
             with pytest.raises(MappingError, match="API key"):
                 GeminiMapper(api_key=None)
 
+    def test_map_accepts_instructions_positionally(self):
+        """RagMapper/generate_from_content call mapper.map(content, sections, instructions) —
+        must not raise TypeError, and the instructions text must reach the prompt."""
+        import sys
+        from docpilot.mapping.gemini import GeminiMapper
+
+        mock_usage = MagicMock()
+        mock_usage.prompt_token_count = 10
+        mock_usage.candidates_token_count = 5
+
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"sections": {"서론": "A", "결론": "B"}})
+        mock_response.usage_metadata = mock_usage
+
+        mock_genai = MagicMock()
+        mock_genai.Client.return_value.models.generate_content.return_value = mock_response
+
+        with patch.dict(sys.modules, {"google.genai": mock_genai}):
+            mapper = GeminiMapper(api_key="test-key")
+            mapper.map(CONTENT, SECTIONS, "전문 용어는 한국어로 병기하세요")
+
+            sent_prompt = mock_genai.Client.return_value.models.generate_content.call_args.kwargs["contents"]
+        assert "전문 용어는 한국어로 병기하세요" in sent_prompt
+
 
 class TestOpenAICompatMapper:
     def test_grok_mapper(self):
@@ -217,3 +261,82 @@ class TestOpenAICompatMapper:
             result = mapper.map(CONTENT, SECTIONS)
 
         assert result.sections["결론"] == "내용B"
+
+    def test_map_accepts_instructions_positionally(self):
+        """RagMapper/generate_from_content call mapper.map(content, sections, instructions) —
+        must not raise TypeError, and the instructions text must reach the prompt."""
+        from docpilot.mapping.openai_compat import OllamaMapper
+
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = json.dumps(
+            {"sections": {"서론": "A", "결론": "B"}}
+        )
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 5
+
+        with patch("openai.OpenAI") as MockClient:
+            MockClient.return_value.chat.completions.create.return_value = mock_response
+            mapper = OllamaMapper(model="llama3.2")
+            mapper.map(CONTENT, SECTIONS, "전문 용어는 한국어로 병기하세요")
+
+            sent_prompt = MockClient.return_value.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+        assert "전문 용어는 한국어로 병기하세요" in sent_prompt
+
+
+class TestOpenAIMapper:
+    def test_map_calls_api(self):
+        from docpilot.mapping.openai import OpenAIMapper
+
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = json.dumps(
+            {"sections": {"서론": "내용A", "결론": "내용B"}}
+        )
+        mock_response.usage.prompt_tokens = 60
+        mock_response.usage.completion_tokens = 30
+
+        with patch("openai.OpenAI") as MockClient:
+            MockClient.return_value.chat.completions.create.return_value = mock_response
+            mapper = OpenAIMapper(api_key="test-key")
+            result = mapper.map(CONTENT, SECTIONS)
+
+        assert result.sections["결론"] == "내용B"
+        assert result.model.startswith("gpt")
+
+    def test_complete_calls_api(self):
+        from docpilot.mapping.openai import OpenAIMapper
+
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = "1"
+
+        with patch("openai.OpenAI") as MockClient:
+            MockClient.return_value.chat.completions.create.return_value = mock_response
+            mapper = OpenAIMapper(api_key="test-key")
+            result = mapper.complete("프롬프트")
+
+        assert result == "1"
+
+    def test_missing_api_key_raises(self):
+        from docpilot.mapping.openai import OpenAIMapper
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(MappingError, match="API key"):
+                OpenAIMapper(api_key=None)
+
+    def test_map_accepts_instructions_positionally(self):
+        """RagMapper/generate_from_content call mapper.map(content, sections, instructions) —
+        must not raise TypeError, and the instructions text must reach the prompt."""
+        from docpilot.mapping.openai import OpenAIMapper
+
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = json.dumps(
+            {"sections": {"서론": "A", "결론": "B"}}
+        )
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 5
+
+        with patch("openai.OpenAI") as MockClient:
+            MockClient.return_value.chat.completions.create.return_value = mock_response
+            mapper = OpenAIMapper(api_key="test-key")
+            mapper.map(CONTENT, SECTIONS, "전문 용어는 한국어로 병기하세요")
+
+            sent_prompt = MockClient.return_value.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+        assert "전문 용어는 한국어로 병기하세요" in sent_prompt

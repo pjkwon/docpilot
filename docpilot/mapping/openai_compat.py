@@ -44,14 +44,19 @@ class OpenAICompatMapper(BaseLLMMapper):
             raise MappingError(f"API call failed ({self._base_url})", detail=str(e)) from e
         return response.choices[0].message.content or ""
 
-    def map(self, content, sections: list[TemplateSection]) -> MappingResult:
+    def map(
+        self,
+        content,
+        sections: list[TemplateSection],
+        instructions: str | None = None,
+    ) -> MappingResult:
         try:
             from openai import OpenAI
         except ImportError as e:
             raise MappingError("openai SDK required: pip install openai") from e
 
         client = OpenAI(api_key=self._api_key, base_url=self._base_url)
-        prompt = self._build_prompt(self._resolve_content(content), sections)
+        prompt = self._build_prompt(self._resolve_content(content), sections, instructions)
 
         start = time.perf_counter()
         try:

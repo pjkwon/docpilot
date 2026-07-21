@@ -42,14 +42,19 @@ class GeminiMapper(BaseLLMMapper):
             raise MappingError("Gemini API call failed", detail=str(e)) from e
         return response.text or ""
 
-    def map(self, content, sections: list[TemplateSection]) -> MappingResult:
+    def map(
+        self,
+        content,
+        sections: list[TemplateSection],
+        instructions: str | None = None,
+    ) -> MappingResult:
         try:
             from google import genai
         except ImportError as e:
             raise MappingError("google-genai SDK required: pip install google-genai") from e
 
         client = genai.Client(api_key=self._api_key)
-        prompt = self._build_prompt(self._resolve_content(content), sections)
+        prompt = self._build_prompt(self._resolve_content(content), sections, instructions)
 
         start = time.perf_counter()
         try:

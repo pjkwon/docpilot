@@ -25,14 +25,35 @@ class OpenAIMapper(BaseLLMMapper):
                 detail="Pass api_key or set OPENAI_API_KEY env var",
             )
 
-    def map(self, content, sections: list[TemplateSection]) -> MappingResult:
+    def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        try:
+            from openai import OpenAI
+        except ImportError as e:
+            raise MappingError("openai SDK required: pip install openai") from e
+        client = OpenAI(api_key=self._api_key)
+        try:
+            response = client.chat.completions.create(
+                model=self._model,
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            raise MappingError("OpenAI API call failed", detail=str(e)) from e
+        return response.choices[0].message.content or ""
+
+    def map(
+        self,
+        content,
+        sections: list[TemplateSection],
+        instructions: str | None = None,
+    ) -> MappingResult:
         try:
             from openai import OpenAI
         except ImportError as e:
             raise MappingError("openai SDK required: pip install openai") from e
 
         client = OpenAI(api_key=self._api_key)
-        prompt = self._build_prompt(self._resolve_content(content), sections)
+        prompt = self._build_prompt(self._resolve_content(content), sections, instructions)
 
         start = time.perf_counter()
         try:
