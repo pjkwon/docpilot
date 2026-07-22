@@ -916,6 +916,22 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 다만 smart-docgen 기본 설정에서 확인 가능한 제약이 하나 있습니다. 인덱싱 기본 청크 크기는 문자 기준 1000자(`docpilot/db/indexer.py`의 `_CHUNK_SIZE`)인데, 한글은 토큰당 대략 1.5~2자라 청크에 따라 500~700토큰대가 나올 수 있습니다. e5-base는 512토큰이 한도라 이런 청크는 초과분이 **에러 없이 조용히 잘려서** 인코딩됩니다. BGE-m3는 8192토큰이라 이 문제가 없습니다. 청크가 자주 긴 데이터(회의록 전문, 긴 조항형 문서 등)를 다룬다면 BGE-m3 쪽이 안전합니다.
 
+### 로컬 모델 지연시간 실측 (CPU)
+
+`tests/test_embed_model_bench.py`로 측정. 검색 품질이 아니라 **속도**만 비교한 수치입니다 (테스트 환경: Intel Core Ultra 7 155U, CPU, Windows, sentence-transformers 5.5.1). bge-m3는 `FlagEmbedding` 미설치 환경이라 이번 측정에서 제외.
+
+| 모델 | 차원 | cold start | 단건 (평균) | 배치 10건 (건당) | 배치 50건 (건당) |
+|---|---|---|---|---|---|
+| multilingual-e5-base (기본) | 768 | 17.0s | 51.3ms | 22.1ms | 20.0ms |
+| multilingual-MiniLM-L12-v2 | 384 | 8.0s | 65.9ms | 12.5ms | 6.6ms |
+| multilingual-e5-large | 1024 | 10.6s | 115.6ms | 78.0ms | 79.1ms |
+
+- **cold start**는 최초 모델 로드+추론 1회 비용(이후엔 재사용). 모델 용량과 대체로 비례하지 않는 건 e5-base가 아직 디스크 캐시가 덜 따뜻했을 수 있어서인데, 재측정 시 달라질 수 있습니다 — 참고용 수치입니다.
+- **단건(검색 시 쿼리 임베딩 비용)**: e5-base(default) 51ms, MiniLM 66ms, e5-large 116ms. 검색 요청마다 이 비용이 매번 발생합니다(캐싱 없음).
+- **배치(인덱싱 시 청크 임베딩 비용)**: e5-large가 건당 78~79ms로 가장 느리고, MiniLM이 건당 6.6ms로 가장 빠릅니다 — e5-base 대비 대략 3배.
+- FTS5/sqlite-vec 쿼리 자체는 보통 수 ms~수십 ms대라, 검색 요청의 지연시간은 DB 조회가 아니라 이 임베딩 추론 비용이 지배적입니다.
+- bge-m3까지 비교하려면 `pip install FlagEmbedding` 후 `pytest tests/test_embed_model_bench.py -s -k bge`로 재측정하세요.
+
 ### 커스텀 임베딩
 
 `Callable[[str], list[float]]` 인터페이스를 맞추면 어떤 임베딩 모델이든 연결할 수 있습니다.  
