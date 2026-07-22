@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-22
+
 ### Added
 - 인덱싱/검색에 `collection` 태그 도입 — `index()`/`search()`/`generate()`에 `collection` 파라미터 추가, `SearchFilter.collection`으로 검색 범위를 특정 폴더(태그)로 제한 가능. 태그 미지정 시 기존과 동일하게 DB 전체를 대상으로 검색
 
