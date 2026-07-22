@@ -982,6 +982,10 @@ class DocPilot:
         group_by_doc:
             If True, aggregate chunk-level results into per-document ``DocumentResult``
             objects — returns ``list[DocumentResult]`` instead of ``list[SearchResult]``.
+            Uses ``score="max"`` (best single chunk wins; favors documents where matches
+            are concentrated in one chunk). For ``score="sum"`` (favors documents where
+            the query recurs across many chunks) call
+            ``docpilot.search.group_by_document(results, score="sum")`` directly instead.
         collection:
             Convenience shorthand for ``filters.collection`` — scopes the search to documents
             indexed with this tag. Raises ``ValueError`` if *filters* already sets a different

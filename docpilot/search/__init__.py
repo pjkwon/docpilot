@@ -22,6 +22,17 @@ def group_by_document(
         How many top-scoring chunks to keep per document.
     score:
         Aggregation strategy — ``"max"`` (default) or ``"sum"``.
+
+        ``"max"`` takes the single best-scoring chunk as the document's score,
+        so a document with one strong match ranks the same as a document with
+        many weaker matches — concentrated hits win, since a chunk where the
+        query appears repeatedly typically outscores any single-occurrence
+        chunk. ``"sum"`` adds up every matching chunk's score, so a query that
+        recurs throughout a document (several chunks, one hit each) can outrank
+        a document where all occurrences are packed into one chunk — this
+        matters especially with BM25 scores (see ``morpheme.search``), whose
+        term-frequency saturation gives diminishing returns to repeated hits
+        within a single chunk.
     """
     if score not in ("max", "sum"):
         raise ValueError(f"score must be 'max' or 'sum', got {score!r}")

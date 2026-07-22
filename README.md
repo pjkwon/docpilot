@@ -776,7 +776,14 @@ docs = group_by_document(
     top_chunks=3,     # 문서당 보여줄 최고점 청크 수 (기본 3)
     score="max",      # "max" 또는 "sum" (기본 "max")
 )
+```
 
+`max` vs `sum` 차이 (중요, 결과가 달라짐):
+
+- **`"max"`** — 문서 내 최고점 청크 하나의 점수를 그대로 문서 점수로 씁니다. 검색어가 한 청크에 여러 번 몰려 있는 문서가, 검색어가 문서 전체에 걸쳐 청크마다 한 번씩 나오는 문서보다 유리합니다.
+- **`"sum"`** — 매칭된 모든 청크의 점수를 합산합니다. 검색어가 문서 곳곳에 퍼져 나오는 경우 유리해질 수 있습니다. 특히 BM25 점수는 한 청크 내 반복 등장에 대해 점수가 체감(saturation)하므로, 같은 총 등장 횟수라도 여러 청크에 나뉘어 있는 쪽이 `sum` 기준으로는 더 높게 나올 수 있습니다.
+
+```python
 for doc in docs:
     print(doc.source, doc.score, doc.chunk_count)
     for chunk in doc.top_chunks:
