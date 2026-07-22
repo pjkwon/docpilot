@@ -910,6 +910,78 @@ def fill_template(
     return out_path
 
 
+@dataclass
+class RetrievedContext:
+    template: str
+    instructions: str
+    sections: list
+    context: str
+
+
+def retrieve_context(
+    data_folder: str | Path,
+    template: str | Path,
+    reindex: bool = False,
+    top_k: int = 10,
+    collection: str | None = None,
+    embed_fn=None,
+    database_url: str | None = None,
+) -> RetrievedContext:
+    """
+    Index data_folder and retrieve relevant context for a template's sections — no LLM call.
+
+    Use this when the caller (e.g. an MCP client) wants to author the section content itself:
+    call this first to get the retrieved context text and section definitions, write the
+    sections using that context, then call fill_template() to assemble the document.
+
+    collection:  optional tag applied when indexing data_folder — see DocPilot.generate().
+    embed_fn:    defaults to the same local embedding model DocPilot() uses when omitted.
+                 Pass the same embed_fn used elsewhere against this DB, or vector search may
+                 silently disagree with previously indexed embeddings (see DocPilot docstring).
+    database_url: defaults to DOCPILOT_DATABASE_URL / ~/docpilot.db, same as DocPilot().
+    """
+    template_path, db_sections_meta = _resolve_template_path(template)
+    template_path, sections, instructions = _resolve_sections(template, template_path, db_sections_meta)
+
+    if embed_fn is None:
+        from docpilot.search.embedding import default_embed_fn
+        embed_fn = default_embed_fn()
+
+    from docpilot.db import client as db_client
+    db_client.init(database_url)
+    db_client.create_tables()
+
+    from docpilot.db import indexer
+    doc_ids = indexer.index_folder(
+        data_folder, embed_fn=embed_fn, force=reindex, collection=collection
+    )
+    if not doc_ids:
+        raise DocPilotError(
+            "데이터 폴더에서 인덱싱된 문서가 없습니다.",
+            detail=(
+                f"{data_folder} 에서 지원하는 파일을 찾지 못했거나 "
+                "모든 파일의 수집(ingestion)에 실패했습니다. "
+                "지원 형식: .txt .md .csv .hwpx .hwp .docx .pdf"
+            ),
+        )
+
+    from docpilot.search.models import SearchFilter
+    if collection is not None:
+        filters = SearchFilter(collection=collection)
+    else:
+        filters = SearchFilter(source_pattern=f"{Path(data_folder).resolve()}{os.sep}*")
+
+    from docpilot.mapping.rag import retrieve as rag_retrieve
+    context = rag_retrieve(sections, embed_fn=embed_fn, top_k=top_k, filters=filters)
+
+    return RetrievedContext(
+        template=str(template_path),
+        instructions=instructions,
+        sections=sections,
+        context=context,
+    )
+
+
 class DocPilot:
     """
     Main entry point for docpilot.

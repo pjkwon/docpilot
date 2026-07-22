@@ -121,10 +121,10 @@ class TestGenerateFromContentInputForms:
             )
 
     def test_no_rag_search_performed(self, mock_pilot, hwpx_template: Path, tmp_path: Path, monkeypatch):
-        """RagMapper._retrieve를 건드리면 실패하게 만들어 검색 경로를 안 탄다는 걸 확인."""
+        """rag.retrieve를 건드리면 실패하게 만들어 검색 경로를 안 탄다는 걸 확인."""
         def _boom(*a, **k):
             raise AssertionError("RAG retrieval must not run in generate_from_content")
-        monkeypatch.setattr(mock_pilot._rag_mapper, "_retrieve", _boom)
+        monkeypatch.setattr("docpilot.mapping.rag.retrieve", _boom)
 
         mock_pilot.generate_from_content(
             content="텍스트",

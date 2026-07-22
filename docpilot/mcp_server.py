@@ -76,10 +76,12 @@ mcp = FastMCP(
         "제공합니다. 콘텐츠 작성(데이터 읽기·문장 구성)은 이 서버가 아니라 호출하는 에이전트가 "
         "직접 수행하고, 이 서버는 완성된 텍스트를 실제 문서 파일로 조립하는 역할만 합니다.\n"
         "\n"
-        "## 문서 생성 워크플로 (describe_template → fill_template)\n"
+        "## 문서 생성 워크플로 (describe_template → [retrieve_context] → fill_template)\n"
         "1단계: describe_template(template) 호출 → 정확한 섹션 키, 섹션별 규칙/설명, "
         "채워야 할 예시 dict 형태를 확인합니다.\n"
-        "2단계: 데이터를 직접 읽고 각 섹션에 들어갈 내용을 작성합니다.\n"
+        "2단계: 데이터를 직접 읽고 각 섹션에 들어갈 내용을 작성합니다. 데이터 폴더가 크거나 "
+        "직접 다 읽기 부담스러우면 retrieve_context(data_folder, template) 호출 → 이 서버가 "
+        "형태소+벡터 하이브리드 검색으로 관련 청크만 골라 반환합니다 (LLM 호출 없음, API 키 불필요).\n"
         "3단계: fill_template(template, sections, output) 호출 → 작성한 내용을 템플릿에 "
         "기계적으로 채워 실제 문서 파일(.hwpx/.docx/.pdf)을 생성합니다. LLM 호출이 없으므로 "
         "섹션 키가 정확히 일치해야 하며, 누락되거나 템플릿에 없는 키는 오류로 반환됩니다.\n"
@@ -218,6 +220,68 @@ def describe_template(template: str) -> str:
     example_json = json.dumps(info["example"], ensure_ascii=False, indent=2)
     lines.append(f"\n[fill_template()의 sections 인자에 그대로 채워 넣을 예시]\n{example_json}")
 
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def retrieve_context(
+    data_folder: str,
+    template: str,
+    reindex: bool = False,
+    top_k: int = 10,
+    collection: str | None = None,
+) -> str:
+    """데이터 폴더를 인덱싱하고 템플릿 섹션과 관련된 컨텍스트를 검색해 반환합니다.
+
+    형태소+벡터 하이브리드 검색(및 RRF 병합)만 수행하며 LLM을 호출하지 않습니다 — API 키가
+    필요 없습니다. describe_template() 다음, fill_template() 이전에 선택적으로 사용하세요:
+    이 도구가 돌려준 컨텍스트를 참고해 각 섹션 내용을 직접 작성한 뒤 fill_template()을
+    호출합니다.
+
+    Args:
+        data_folder: 인덱싱할 데이터 폴더 경로
+        template: 템플릿 파일 경로 또는 내장 템플릿 이름 (report/gonmun/minutes/proposal)
+        reindex: 이미 인덱싱된 폴더라도 강제로 다시 인덱싱할지 여부
+        top_k: 섹션당 검색해 반환할 청크 수
+        collection: 인덱싱 시 태그. 지정하면 파일 경로 대신 이 태그로 검색 범위를 한정합니다.
+    """
+    from docpilot import retrieve_context as _retrieve_context
+    from docpilot.exceptions import DocPilotError
+
+    try:
+        result = _retrieve_context(
+            data_folder=data_folder,
+            template=template,
+            reindex=reindex,
+            top_k=top_k,
+            collection=collection,
+        )
+    except DocPilotError as e:
+        return f"컨텍스트 검색 실패: {e}"
+
+    lines = [f"템플릿: {result.template}"]
+    if result.instructions:
+        lines.append(f"\n[전역 작성 지침]\n{result.instructions}")
+
+    lines.append("\n[채워야 할 섹션]")
+    for s in result.sections:
+        tags = []
+        if s.is_list:
+            tags.append(f"목록·최대 {s.group_max}개" if s.group_max else "목록·가변개수")
+        if s.optional:
+            tags.append("선택")
+        tag_str = f"  [{', '.join(tags)}]" if tags else ""
+        lines.append(f'- "{s.name}"{tag_str}')
+        if s.rule:
+            lines.append(f"    규칙: {s.rule}")
+        if s.description:
+            lines.append(f"    설명: {s.description}")
+
+    lines.append(f"\n[검색된 컨텍스트]\n{result.context}")
+    lines.append(
+        "\n위 컨텍스트를 참고해 각 섹션 내용을 직접 작성한 뒤 "
+        "fill_template(template, sections, output)을 호출하세요."
+    )
     return "\n".join(lines)
 
 
