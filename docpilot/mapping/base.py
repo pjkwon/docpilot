@@ -151,13 +151,36 @@ class BaseLLMMapper(ABC):
     def _parse_response(self, raw: str, sections: list[TemplateSection]) -> dict[str, str | list[str]]:
         from docpilot.exceptions import MappingError
 
+        data = {}
         try:
-            start = raw.index("{")
-            end = raw.rindex("}") + 1
-            data = json.loads(raw[start:end])
-            result = data.get("sections", {})
+            start = raw.find("{")
+            if start != -1:
+                end = raw.rfind("}") + 1
+                if end > start:
+                    json_str = raw[start:end]
+                else:
+                    json_str = raw[start:] + "\n}"
+                try:
+                    data = json.loads(json_str)
+                except Exception:
+                    # Attempt to fix trailing commas or unclosed brackets
+                    import re
+                    clean_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+                    if not clean_str.endswith("}"):
+                        clean_str += "}"
+                    data = json.loads(clean_str)
+            else:
+                data = json.loads(raw)
         except (ValueError, json.JSONDecodeError) as e:
             raise MappingError("Failed to parse LLM response as JSON", detail=raw[:200]) from e
+
+        # Handle both {"sections": {...}} wrapping and direct dict {...} outputs
+        if isinstance(data, dict):
+            result = data.get("sections", data)
+            if not isinstance(result, dict):
+                result = data
+        else:
+            result = {}
 
         # Required sections must be present; optional/list sections default to "" / []
         required_missing = [

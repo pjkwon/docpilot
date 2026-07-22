@@ -77,10 +77,25 @@ EVAL_CASES: list[QueryCase] = [
 DATA_DIR = Path(__file__).parent.parent / "data"
 
 
+def _missing_ground_truth_files() -> list[str]:
+    """EVAL_CASES가 요구하는 실제 문서 중 DATA_DIR에 없는 파일명 목록."""
+    required = sorted({name for case in EVAL_CASES for name in case.relevant_sources})
+    present = {p.name for p in DATA_DIR.rglob("*")} if DATA_DIR.is_dir() else set()
+    return [name for name in required if name not in present]
+
+
 @pytest.fixture(scope="session")
 def quality_pilot(tmp_path_factory, embed_fn):
     if not DATA_DIR.is_dir():
-        pytest.skip("data/ 폴더 없음 — ground truth 평가 불가")
+        pytest.skip(f"data/ 폴더 없음 — ground truth 평가 불가 ({DATA_DIR}에 문서를 넣어주세요)")
+
+    missing = _missing_ground_truth_files()
+    if missing:
+        pytest.skip(
+            "ground truth 문서가 data/ 폴더에 없습니다 — 검색 품질 평가 불가.\n"
+            f"누락된 파일: {', '.join(missing)}\n"
+            f"위 파일들을 {DATA_DIR}에 넣은 뒤 다시 실행하세요."
+        )
 
     from docpilot import DocPilot
 

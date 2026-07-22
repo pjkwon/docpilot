@@ -332,8 +332,16 @@ def _check_content_size(content_str: str, max_input_tokens: int | None) -> None:
         )
 
 
-def _extract_placeholders(template_path: Path) -> list[str]:
-    """Extract {{section}} placeholder names from a template file."""
+def _read_template_text(template_path: Path) -> str | None:
+    """
+    Read a template file's raw markup text for placeholder scanning.
+
+    HWPX: prefers content.hml (our own generated templates), else concatenates
+    all section<N>.xml parts in order — a real HWPX can span multiple sections.
+    DOCX: document.xml plus header*/footer*.xml (placeholders can live in
+    headers/footers), excluding unrelated metadata parts like docProps/*.xml.
+    Returns None when the format/content can't be read.
+    """
     suffix = template_path.suffix.lower()
 
     if suffix == ".hwpx":
@@ -341,28 +349,46 @@ def _extract_placeholders(template_path: Path) -> list[str]:
             names = zf.namelist()
             candidates = [n for n in names if n.endswith("content.hml")]
             if not candidates:
-                candidates = [n for n in names if n.endswith("section0.xml")]
+                sections = [n for n in names if re.search(r"section\d+\.xml$", n)]
+                candidates = sorted(
+                    sections, key=lambda n: int(re.search(r"(\d+)\.xml$", n).group(1))
+                )
             if not candidates:
-                return []
-            text = "".join(
-                zf.read(c).decode("utf-8", errors="ignore") for c in candidates
-            )
+                return None
+            return "".join(zf.read(c).decode("utf-8", errors="ignore") for c in candidates)
     elif suffix == ".docx":
         with zipfile.ZipFile(template_path, "r") as zf:
-            text = zf.read("word/document.xml").decode("utf-8", errors="ignore")
+            names = zf.namelist()
+            candidates = [n for n in ("word/document.xml",) if n in names]
+            candidates += sorted(n for n in names if re.match(r"word/(header|footer)\d*\.xml$", n))
+            if not candidates:
+                return None
+            return "".join(zf.read(c).decode("utf-8", errors="ignore") for c in candidates)
     elif suffix == ".pdf":
         try:
             import pdfplumber
             with pdfplumber.open(template_path) as pdf:
-                text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+                return "\n".join(p.extract_text() or "" for p in pdf.pages)
         except Exception:
-            return []
-    else:
+            return None
+    return None
+
+
+def _extract_placeholders(template_path: Path) -> list[str]:
+    """Extract {{section}} placeholder names from a template file."""
+    text = _read_template_text(template_path)
+    if text is None:
         return []
 
     seen: dict[str, None] = {}
     for match in _PLACEHOLDER_RE.finditer(text):
         seen[match.group(1)] = None
+
+    if not seen:
+        clean_text = re.sub(r'<[^>]+>', '', text)
+        for match in _PLACEHOLDER_RE.finditer(clean_text):
+            seen[match.group(1)] = None
+
     return list(seen)
 
 
@@ -376,31 +402,12 @@ def _extract_placeholder_sections(template_path: Path) -> list:
     """
     from docpilot.mapping.base import TemplateSection
 
-    suffix = template_path.suffix.lower()
-
-    if suffix == ".hwpx":
-        with zipfile.ZipFile(template_path, "r") as zf:
-            names = zf.namelist()
-            candidates = [n for n in names if n.endswith("content.hml")]
-            if not candidates:
-                candidates = [n for n in names if n.endswith("section0.xml")]
-            if not candidates:
-                return []
-            text = "".join(
-                zf.read(c).decode("utf-8", errors="ignore") for c in candidates
-            )
-    elif suffix == ".docx":
-        with zipfile.ZipFile(template_path, "r") as zf:
-            text = zf.read("word/document.xml").decode("utf-8", errors="ignore")
-    elif suffix == ".pdf":
-        try:
-            import pdfplumber
-            with pdfplumber.open(template_path) as pdf:
-                text = "\n".join(p.extract_text() or "" for p in pdf.pages)
-        except Exception:
-            return []
-    else:
+    text = _read_template_text(template_path)
+    if text is None:
         return []
+
+    clean_text = re.sub(r'<[^>]+>', '', text)
+    search_text = text if _PLACEHOLDER_RE.search(text) else clean_text
 
     # Collect all keys in first-seen order
     all_keys: list[str] = []
@@ -408,13 +415,13 @@ def _extract_placeholder_sections(template_path: Path) -> list:
     optional_keys: set[str] = set()
     dynamic_list_keys: set[str] = set()  # {{?key?}}
 
-    for m in _DYNAMIC_LIST_RE.finditer(text):
+    for m in _DYNAMIC_LIST_RE.finditer(search_text):
         dynamic_list_keys.add(m.group(1))
 
-    for m in _OPTIONAL_PLACEHOLDER_RE.finditer(text):
+    for m in _OPTIONAL_PLACEHOLDER_RE.finditer(search_text):
         optional_keys.add(m.group(1))
 
-    for m in _PLACEHOLDER_RE.finditer(text):
+    for m in _PLACEHOLDER_RE.finditer(search_text):
         key = m.group(1)
         if key not in seen_keys:
             all_keys.append(key)
