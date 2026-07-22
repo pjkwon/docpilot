@@ -7,7 +7,7 @@ from importlib.metadata import version, PackageNotFoundError
 from typing import TYPE_CHECKING
 
 try:
-    __version__ = version("docpilot")
+    __version__ = version("smart-docgen")
 except PackageNotFoundError:
     __version__ = "0.0.0+unknown"
 import tempfile
@@ -945,10 +945,13 @@ class DocPilot:
         db_client.init(database_url)
         db_client.create_tables()
 
-    def index(self, data_folder: str | Path) -> list[int]:
-        """Ingest and index all supported files in a folder."""
+    def index(self, data_folder: str | Path, collection: str | None = None) -> list[int]:
+        """Ingest and index all supported files in a folder.
+
+        collection: optional tag to scope later searches (see SearchFilter.collection).
+        """
         from docpilot.db import indexer
-        return indexer.index_folder(data_folder, embed_fn=self._embed_fn)
+        return indexer.index_folder(data_folder, embed_fn=self._embed_fn, collection=collection)
 
     def search(
         self,
@@ -959,6 +962,7 @@ class DocPilot:
         or_fallback: bool = True,
         highlight: bool = False,
         group_by_doc: bool = False,
+        collection: str | None = None,
     ):
         """
         Search indexed documents.
@@ -978,13 +982,29 @@ class DocPilot:
         group_by_doc:
             If True, aggregate chunk-level results into per-document ``DocumentResult``
             objects — returns ``list[DocumentResult]`` instead of ``list[SearchResult]``.
+        collection:
+            Convenience shorthand for ``filters.collection`` — scopes the search to documents
+            indexed with this tag. Raises ``ValueError`` if *filters* already sets a different
+            ``collection``.
 
         "bm25"/"hybrid" modes fall back to "exact" and emit a ``UserWarning`` when
         kiwipiepy isn't installed, instead of raising.
         """
         import warnings
+        from dataclasses import replace as _dc_replace
         from docpilot.exceptions import SearchError
         from docpilot.search import exact, morpheme
+        from docpilot.search.models import SearchFilter
+
+        if collection is not None:
+            if filters is None:
+                filters = SearchFilter(collection=collection)
+            elif filters.collection is None:
+                filters = _dc_replace(filters, collection=collection)
+            elif filters.collection != collection:
+                raise ValueError(
+                    f"collection={collection!r} conflicts with filters.collection={filters.collection!r}"
+                )
 
         try:
             match mode:
@@ -1039,6 +1059,7 @@ class DocPilot:
         extra_instructions: str | None = None,
         instructions_doc: str | Path | None = None,
         top_k: int = 10,
+        collection: str | None = None,
     ) -> GenerateResult:
         """
         Full pipeline: index → search → map → build.
@@ -1049,6 +1070,9 @@ class DocPilot:
         extra_instructions: additional writing guidelines injected into the LLM prompt.
                             Use this to pass document-specific rules such as proposal
                             writing guidelines extracted from an RFP.
+        collection:         optional tag applied when indexing data_folder. When given, RAG
+                            retrieval is scoped by this tag instead of the data_folder path,
+                            so it keeps working even if files are later moved.
         """
         template_path, _db_sections_meta = self._resolve_template(template)
         output_path = Path(output)
@@ -1070,7 +1094,9 @@ class DocPilot:
         )
 
         from docpilot.db import indexer
-        doc_ids = indexer.index_folder(data_folder, embed_fn=self._embed_fn, force=reindex)
+        doc_ids = indexer.index_folder(
+            data_folder, embed_fn=self._embed_fn, force=reindex, collection=collection
+        )
         if not doc_ids:
             raise DocPilotError(
                 "데이터 폴더에서 인덱싱된 문서가 없습니다.",
@@ -1086,7 +1112,10 @@ class DocPilot:
         )
 
         from docpilot.search.models import SearchFilter
-        filters = SearchFilter(source_pattern=f"{Path(data_folder).resolve()}{os.sep}*")
+        if collection is not None:
+            filters = SearchFilter(collection=collection)
+        else:
+            filters = SearchFilter(source_pattern=f"{Path(data_folder).resolve()}{os.sep}*")
         mapping_result = self._rag_mapper.map(sections, instructions=extra_instructions, top_k=top_k, filters=filters)
 
         builder = self._build_builder(output_path)
@@ -1242,6 +1271,7 @@ class DocPilot:
         data_folder: str | Path,
         template: str | Path,
         quick: bool = False,
+        collection: str | None = None,
     ) -> str:
         """
         Estimate API token cost before generating.
@@ -1277,7 +1307,7 @@ class DocPilot:
             return "\n".join(lines)
 
         from docpilot.db import indexer
-        indexer.index_folder(data_folder, embed_fn=self._embed_fn)
+        indexer.index_folder(data_folder, embed_fn=self._embed_fn, collection=collection)
         content = self._rag_mapper.retrieve_content(sections)
 
         if not hasattr(self._mapper, "count_tokens"):
@@ -1376,12 +1406,13 @@ class DocPilot:
         template: str | Path,
         output: str | Path,
         mappers: dict | None = None,
+        collection: str | None = None,
     ) -> str:
         """Run mapping benchmark across multiple LLM mappers and return report."""
         from docpilot.mapping import benchmark, ClaudeMapper, OpenAIMapper
 
         template_path, db_sections_meta = self._resolve_template(template)
-        self.index(data_folder)
+        self.index(data_folder, collection=collection)
 
         template_path, template_sections, _ = _resolve_sections(
             template, template_path, db_sections_meta, mapper=self._mapper,

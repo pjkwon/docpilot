@@ -31,6 +31,7 @@ class Document(Base):
     mime_type: Mapped[str] = mapped_column(String(128), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    collection: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

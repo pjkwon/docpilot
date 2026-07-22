@@ -35,12 +35,14 @@ def index(
     overlap: int = _CHUNK_OVERLAP,
     min_chunk_size: int = _MIN_CHUNK_SIZE,
     file_hash: str | None = None,
+    collection: str | None = None,
 ) -> int:
     """
     Index an IngestedDocument into the database.
 
     Returns the document ID. Skips re-indexing if the source already exists.
     embed_fn: optional callable (text -> vector) for generating embeddings.
+    collection: optional tag used to scope search (see SearchFilter.collection).
     """
     with client.session() as db:
         existing = (
@@ -56,6 +58,7 @@ def index(
             mime_type=doc.mime_type,
             content=doc.content,
             file_hash=file_hash,
+            collection=collection,
             metadata_=doc.metadata,
         )
         db.add(db_doc)
@@ -115,6 +118,7 @@ def reindex(
     overlap: int = _CHUNK_OVERLAP,
     min_chunk_size: int = _MIN_CHUNK_SIZE,
     file_hash: str | None = None,
+    collection: str | None = None,
 ) -> int:
     """Delete existing document and re-index from scratch."""
     with client.session() as db:
@@ -126,7 +130,15 @@ def reindex(
         if existing:
             db.delete(existing)
 
-    return index(doc, embed_fn=embed_fn, chunk_size=chunk_size, overlap=overlap, min_chunk_size=min_chunk_size, file_hash=file_hash)
+    return index(
+        doc,
+        embed_fn=embed_fn,
+        chunk_size=chunk_size,
+        overlap=overlap,
+        min_chunk_size=min_chunk_size,
+        file_hash=file_hash,
+        collection=collection,
+    )
 
 
 class IndexCancelledError(Exception):
@@ -141,6 +153,7 @@ def index_folder(
     cancel_event: threading.Event | None = None,
     file_timeout: float | None = 300.0,
     files: list[str] | None = None,
+    collection: str | None = None,
 ) -> list[int]:
     """Ingest and index all supported files in a folder. force=True re-indexes already indexed files.
 
@@ -148,6 +161,9 @@ def index_folder(
     cancel_event: if set, indexing stops cleanly between files and raises IndexCancelledError.
     file_timeout: per-file ingestion timeout in seconds (default 300s). None disables timeout.
     files: if given, only index files whose name matches one of these entries (case-insensitive on Windows).
+    collection: optional tag applied to every indexed document (see SearchFilter.collection).
+        Re-running with a different collection on an unchanged file updates the tag in place
+        without re-chunking or re-embedding.
     """
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
@@ -191,7 +207,7 @@ def index_folder(
                             continue
                     else:
                         doc = ingester(file)
-                    doc_id = reindex(doc, embed_fn=embed_fn, file_hash=file_hash)
+                    doc_id = reindex(doc, embed_fn=embed_fn, file_hash=file_hash, collection=collection)
                 else:
                     with client.session() as db:
                         existing = (
@@ -201,7 +217,13 @@ def index_folder(
                         )
                         existing_id: int | None = existing.id if existing else None
                         existing_hash: str | None = existing.file_hash if existing else None
+                        existing_collection: str | None = existing.collection if existing else None
                     if existing_id is not None and existing_hash == file_hash:
+                        if existing_collection != collection:
+                            with client.session() as db:
+                                db.query(Document).filter(Document.id == existing_id).update(
+                                    {"collection": collection}
+                                )
                         doc_ids.append(existing_id)
                         continue
                     if file_timeout is not None:
@@ -214,9 +236,9 @@ def index_folder(
                     else:
                         doc = ingester(file)
                     if existing_id is not None:
-                        doc_id = reindex(doc, embed_fn=embed_fn, file_hash=file_hash)
+                        doc_id = reindex(doc, embed_fn=embed_fn, file_hash=file_hash, collection=collection)
                     else:
-                        doc_id = index(doc, embed_fn=embed_fn, file_hash=file_hash)
+                        doc_id = index(doc, embed_fn=embed_fn, file_hash=file_hash, collection=collection)
                 doc_ids.append(doc_id)
                 if progress_fn:
                     progress_fn(len(doc_ids))

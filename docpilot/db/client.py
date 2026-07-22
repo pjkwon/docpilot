@@ -48,7 +48,7 @@ def init(database_url: str | None = None) -> None:
             except ImportError:
                 pass  # sqlite-vec not installed; vector search unavailable
 
-    _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False)
+    _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False, expire_on_commit=False)
 
 
 def create_tables() -> None:
@@ -64,6 +64,12 @@ def create_tables() -> None:
             }
             if "file_hash" not in existing:
                 conn.execute(text("ALTER TABLE documents ADD COLUMN file_hash TEXT"))
+            if "collection" not in existing:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN collection TEXT"))
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_documents_collection ON documents(collection)"
+            ))
         with engine.begin() as conn:
             conn.execute(text(
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks "
@@ -121,6 +127,12 @@ def create_tables() -> None:
             ))
             conn.execute(text(
                 "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS collection VARCHAR(256)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_documents_collection ON documents(collection)"
             ))
 
 

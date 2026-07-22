@@ -5,8 +5,13 @@
 
 ## [Unreleased]
 
+### Added
+- 인덱싱/검색에 `collection` 태그 도입 — `index()`/`search()`/`generate()`에 `collection` 파라미터 추가, `SearchFilter.collection`으로 검색 범위를 특정 폴더(태그)로 제한 가능. 태그 미지정 시 기존과 동일하게 DB 전체를 대상으로 검색
+
 ### Fixed
 - `suggest_extras()`가 제안하는 설치 명령이 옛 패키지명(`pip install "docpilot[...]"`)을 반환하던 버그 수정 → `smart-docgen[...]`
+- `__version__`이 항상 `"0.0.0+unknown"`으로 표시되던 버그 수정 — `importlib.metadata.version("docpilot")`이 실제 배포명(`smart-docgen`)과 달라 조회에 항상 실패하고 있었음
+- `exact.search()` 및 PostgreSQL Jaccard 폴백 검색이 실제 DB에서 `DetachedInstanceError`로 실패하던 버그 수정 — DB 세션의 `expire_on_commit` 기본값(`True`) 때문에 커밋 후 세션이 닫힌 뒤 ORM 객체 속성에 접근하면서 발생
 
 ### Changed
 - **[Breaking]** MCP 콘솔 스크립트(실행 파일)명을 `docpilot-mcp` → `smart-docgen-mcp`로 변경. 기존에 `claude_desktop_config.json`의 `"command"`에 `docpilot-mcp`를 지정해둔 경우 `smart-docgen-mcp`로 직접 갱신해야 함 (자동 마이그레이션 없음)

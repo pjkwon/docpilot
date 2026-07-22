@@ -12,6 +12,8 @@ def apply_orm_filter(q: Query, f: SearchFilter) -> Query:
     """Apply *f* to an ORM query that already joins the Document table."""
     if f.source_pattern:
         q = q.filter(Document.source.like(_glob_to_like(f.source_pattern)))
+    if f.collection:
+        q = q.filter(Document.collection == f.collection)
     if f.mime_type:
         q = q.filter(Document.mime_type == f.mime_type)
     if f.created_after:
@@ -38,6 +40,10 @@ def build_sql_where(f: SearchFilter, *, is_sqlite: bool) -> tuple[str, dict]:
     if f.source_pattern:
         clauses.append("d.source LIKE :f_source_pattern")
         params["f_source_pattern"] = _glob_to_like(f.source_pattern)
+
+    if f.collection:
+        clauses.append("d.collection = :f_collection")
+        params["f_collection"] = f.collection
 
     if f.mime_type:
         clauses.append("d.mime_type = :f_mime_type")

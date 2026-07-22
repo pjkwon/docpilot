@@ -22,6 +22,9 @@ class SearchFilter:
     source_pattern: str | None = None
     """Shell-glob style pattern matched against document source path (e.g. ``"*.hwpx"``)."""
 
+    collection: str | None = None
+    """Exact match against the document's collection tag (see ``indexer.index_folder(collection=...)``)."""
+
     mime_type: str | None = None
     """Exact MIME type match (e.g. ``"application/vnd.hancom.hwpx"``)."""
 

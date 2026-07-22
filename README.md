@@ -731,6 +731,7 @@ from docpilot.search import SearchFilter, hybrid, exact, morpheme
 
 f = SearchFilter(
     source_pattern="reports/*.hwpx",          # 파일 경로 glob 패턴 (*, ? 지원)
+    collection="project_a",                   # 인덱싱 시 지정한 collection 태그 정확 일치
     mime_type="application/vnd.hancom.hwpx",  # MIME 타입 정확 일치
     metadata={"dept": "기획", "year": "2026"},# 문서 메타데이터 key-value 필터
     created_after=datetime(2026, 1, 1),       # 인덱싱 날짜 범위
@@ -953,6 +954,28 @@ mkdir data
 pilot.index("./data")   # ✓
 pilot.index(".")        # ✗ 프로젝트 전체가 인덱싱됨
 ```
+
+### 검색 범위를 폴더로 제한하기 (collection)
+
+`~/docpilot.db`는 모든 프로젝트/폴더가 공유하는 단일 DB입니다. `index()`로 폴더를 지정해도 **검색은 기본적으로 DB 전체를 대상으로** 하므로, 여러 폴더를 인덱싱했다면 서로 다른 프로젝트의 문서가 검색 결과에 섞여 나올 수 있습니다.
+
+폴더별로 검색 범위를 나누려면 인덱싱 시 `collection` 태그를 붙이고, 검색 시 같은 태그로 필터링하세요.
+
+```python
+pilot.index("./project_a", collection="project_a")
+pilot.index("./project_b", collection="project_b")
+
+pilot.search("사업 계획", collection="project_a")  # project_a 문서만 대상
+pilot.search("사업 계획")                          # collection 지정 없으면 전체 대상
+```
+
+`generate()`도 동일하게 `collection`을 받습니다. 지정하면 파일 경로 기반(`source_pattern`) 대신 `collection` 태그로 RAG 검색을 스코프하므로, 이후 파일을 이동해도 스코프가 깨지지 않습니다.
+
+```python
+pilot.generate(data_folder="./project_a", template="report", output="./out.hwpx", collection="project_a")
+```
+
+이미 인덱싱된 파일이라도(내용 변경 없이) `collection`을 다시 지정하면 재청킹·재임베딩 없이 태그만 갱신됩니다. 같은 파일 경로는 항상 하나의 `collection`에만 속합니다 — 여러 collection에 동시 소속시키는 것은 지원하지 않습니다.
 
 ## 벤치마크
 

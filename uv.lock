@@ -685,117 +685,6 @@ wheels = [
 ]
 
 [[package]]
-name = "docpilot"
-source = { editable = "." }
-dependencies = [
-    { name = "anthropic" },
-    { name = "kiwipiepy" },
-    { name = "lxml" },
-    { name = "pyhwpx" },
-    { name = "python-docx" },
-    { name = "python-dotenv" },
-    { name = "sentence-transformers" },
-    { name = "sqlalchemy" },
-    { name = "sqlite-vec" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "flagembedding" },
-    { name = "google-genai" },
-    { name = "openai" },
-    { name = "pdf2image" },
-    { name = "pdfplumber" },
-    { name = "pgvector" },
-    { name = "pillow" },
-    { name = "psycopg2-binary" },
-    { name = "pytesseract" },
-    { name = "reportlab" },
-    { name = "voyageai" },
-]
-bge = [
-    { name = "flagembedding" },
-]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-mock" },
-]
-gemini = [
-    { name = "google-genai" },
-]
-mcp = [
-    { name = "mcp", extra = ["cli"] },
-]
-openai = [
-    { name = "openai" },
-]
-pdf = [
-    { name = "pdf2image" },
-    { name = "pdfplumber" },
-    { name = "pillow" },
-    { name = "pytesseract" },
-    { name = "reportlab" },
-]
-postgres = [
-    { name = "pgvector" },
-    { name = "psycopg2-binary" },
-]
-voyage = [
-    { name = "voyageai" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "psutil" },
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", specifier = ">=0.25" },
-    { name = "flagembedding", marker = "extra == 'all'", specifier = ">=1.0" },
-    { name = "flagembedding", marker = "extra == 'bge'", specifier = ">=1.0" },
-    { name = "google-genai", marker = "extra == 'all'", specifier = ">=1.0" },
-    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.0" },
-    { name = "kiwipiepy", specifier = ">=0.23.1" },
-    { name = "lxml", specifier = ">=5.0" },
-    { name = "mcp", extras = ["cli"], marker = "extra == 'mcp'", specifier = ">=1.0" },
-    { name = "openai", marker = "extra == 'all'", specifier = ">=1.0" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },
-    { name = "pdf2image", marker = "extra == 'all'", specifier = ">=1.17" },
-    { name = "pdf2image", marker = "extra == 'pdf'", specifier = ">=1.17" },
-    { name = "pdfplumber", marker = "extra == 'all'", specifier = ">=0.11" },
-    { name = "pdfplumber", marker = "extra == 'pdf'", specifier = ">=0.11" },
-    { name = "pgvector", marker = "extra == 'all'", specifier = ">=0.3" },
-    { name = "pgvector", marker = "extra == 'postgres'", specifier = ">=0.3" },
-    { name = "pillow", marker = "extra == 'all'", specifier = ">=10.0" },
-    { name = "pillow", marker = "extra == 'pdf'", specifier = ">=10.0" },
-    { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9" },
-    { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9" },
-    { name = "pyhwpx", specifier = ">=1.7.2" },
-    { name = "pytesseract", marker = "extra == 'all'", specifier = ">=0.3" },
-    { name = "pytesseract", marker = "extra == 'pdf'", specifier = ">=0.3" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.0" },
-    { name = "python-docx", specifier = ">=1.2.0" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "reportlab", marker = "extra == 'all'", specifier = ">=4.0" },
-    { name = "reportlab", marker = "extra == 'pdf'", specifier = ">=4.0" },
-    { name = "sentence-transformers", specifier = ">=5.5.1" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "sqlite-vec", specifier = ">=0.1.9" },
-    { name = "voyageai", marker = "extra == 'all'", specifier = ">=0.3" },
-    { name = "voyageai", marker = "extra == 'voyage'", specifier = ">=0.3" },
-]
-provides-extras = ["pdf", "openai", "gemini", "voyage", "bge", "postgres", "mcp", "all", "dev"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "psutil", specifier = ">=7.2.2" },
-    { name = "pytest", specifier = ">=9.0.3" },
-]
-
-[[package]]
 name = "docstring-parser"
 version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4495,6 +4384,117 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "smart-docgen"
+source = { editable = "." }
+dependencies = [
+    { name = "anthropic" },
+    { name = "kiwipiepy" },
+    { name = "lxml" },
+    { name = "pyhwpx" },
+    { name = "python-docx" },
+    { name = "python-dotenv" },
+    { name = "sentence-transformers" },
+    { name = "sqlalchemy" },
+    { name = "sqlite-vec" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "flagembedding" },
+    { name = "google-genai" },
+    { name = "openai" },
+    { name = "pdf2image" },
+    { name = "pdfplumber" },
+    { name = "pgvector" },
+    { name = "pillow" },
+    { name = "psycopg2-binary" },
+    { name = "pytesseract" },
+    { name = "reportlab" },
+    { name = "voyageai" },
+]
+bge = [
+    { name = "flagembedding" },
+]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-mock" },
+]
+gemini = [
+    { name = "google-genai" },
+]
+mcp = [
+    { name = "mcp", extra = ["cli"] },
+]
+openai = [
+    { name = "openai" },
+]
+pdf = [
+    { name = "pdf2image" },
+    { name = "pdfplumber" },
+    { name = "pillow" },
+    { name = "pytesseract" },
+    { name = "reportlab" },
+]
+postgres = [
+    { name = "pgvector" },
+    { name = "psycopg2-binary" },
+]
+voyage = [
+    { name = "voyageai" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "psutil" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", specifier = ">=0.25" },
+    { name = "flagembedding", marker = "extra == 'all'", specifier = ">=1.0" },
+    { name = "flagembedding", marker = "extra == 'bge'", specifier = ">=1.0" },
+    { name = "google-genai", marker = "extra == 'all'", specifier = ">=1.0" },
+    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.0" },
+    { name = "kiwipiepy", specifier = ">=0.23.1" },
+    { name = "lxml", specifier = ">=5.0" },
+    { name = "mcp", extras = ["cli"], marker = "extra == 'mcp'", specifier = ">=1.0" },
+    { name = "openai", marker = "extra == 'all'", specifier = ">=1.0" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },
+    { name = "pdf2image", marker = "extra == 'all'", specifier = ">=1.17" },
+    { name = "pdf2image", marker = "extra == 'pdf'", specifier = ">=1.17" },
+    { name = "pdfplumber", marker = "extra == 'all'", specifier = ">=0.11" },
+    { name = "pdfplumber", marker = "extra == 'pdf'", specifier = ">=0.11" },
+    { name = "pgvector", marker = "extra == 'all'", specifier = ">=0.3" },
+    { name = "pgvector", marker = "extra == 'postgres'", specifier = ">=0.3" },
+    { name = "pillow", marker = "extra == 'all'", specifier = ">=10.0" },
+    { name = "pillow", marker = "extra == 'pdf'", specifier = ">=10.0" },
+    { name = "psycopg2-binary", marker = "extra == 'all'", specifier = ">=2.9" },
+    { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9" },
+    { name = "pyhwpx", specifier = ">=1.7.2" },
+    { name = "pytesseract", marker = "extra == 'all'", specifier = ">=0.3" },
+    { name = "pytesseract", marker = "extra == 'pdf'", specifier = ">=0.3" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.0" },
+    { name = "python-docx", specifier = ">=1.2.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "reportlab", marker = "extra == 'all'", specifier = ">=4.0" },
+    { name = "reportlab", marker = "extra == 'pdf'", specifier = ">=4.0" },
+    { name = "sentence-transformers", specifier = ">=5.5.1" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "sqlite-vec", specifier = ">=0.1.9" },
+    { name = "voyageai", marker = "extra == 'all'", specifier = ">=0.3" },
+    { name = "voyageai", marker = "extra == 'voyage'", specifier = ">=0.3" },
+]
+provides-extras = ["pdf", "openai", "gemini", "voyage", "bge", "postgres", "mcp", "all", "dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "psutil", specifier = ">=7.2.2" },
+    { name = "pytest", specifier = ">=9.0.3" },
 ]
 
 [[package]]
