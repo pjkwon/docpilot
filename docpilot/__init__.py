@@ -917,6 +917,12 @@ class DocPilot:
     pilot = DocPilot(llm="claude")
     pilot.index(data_folder="./data")
     pilot.generate(data_folder="./data", template="research_report", output="./out.hwpx")
+
+    The ``embed_fn`` passed here is reused for both indexing and search (self._embed_fn),
+    so a single instance always keeps them consistent. Creating separate instances with
+    different ``embed_fn`` values against the same DB — or calling ``indexer``/``embedding``
+    functions directly instead of through this class — can silently break vector search if
+    the models don't match (see README "임베딩 제공자").
     """
 
     def __init__(

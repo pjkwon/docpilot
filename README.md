@@ -900,6 +900,10 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 > **임베딩 차원**: 기본 임베딩 모델은 `default_embed_fn()` (multilingual-e5-base, **768차원**, `EMBEDDING_DIM` 기본값도 768). `bge_embed_fn()`으로 바꾸면 1024차원입니다. 임베딩 제공자를 변경하는 경우 `EMBEDDING_DIM`과 vec_chunks 테이블 차원이 일치해야 합니다. 기존 DB가 있다면 삭제 후 재생성하거나 `vec_chunks`를 DROP 후 `client.create_tables()`로 재생성하세요.
 
+> **인덱싱과 검색은 반드시 같은 `embed_fn`을 써야 합니다.** 인덱싱 때 넣은 벡터와 검색 때 만든 쿼리 벡터가 다른 모델에서 나온 거라면 코사인 유사도 비교 자체가 무의미해집니다. `DocPilot` 인스턴스 하나로 인덱싱·검색을 모두 하면 `self._embed_fn`이 그대로 재사용되니 자동으로 보장되지만, 인덱싱용/검색용 `DocPilot`을 따로 만들거나 `indexer.index_folder()` / `embedding.search()` 같은 저수준 함수를 직접 호출한다면 같은 `embed_fn`을 넘기고 있는지 직접 확인하세요.
+>
+> 차원이 다른 모델을 섞으면(예: 768차원 인덱싱 후 384차원으로 검색) sqlite-vec가 `Dimension mismatch` 에러로 즉시 막아줍니다. 하지만 **차원이 같은 다른 모델**을 섞으면 에러 없이 조용히 무의미한 유사도 결과가 나올 수 있습니다 — 이건 코드 차원에서 감지할 방법이 없으니 각별히 주의하세요.
+
 ### multilingual-e5-base vs BGE-m3, 언제 바꿔야 할까
 
 | | multilingual-e5-base (기본) | BAAI/bge-m3 |
