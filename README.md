@@ -918,19 +918,20 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 ### 로컬 모델 지연시간 실측 (CPU)
 
-`tests/test_embed_model_bench.py`로 측정. 검색 품질이 아니라 **속도**만 비교한 수치입니다 (테스트 환경: Intel Core Ultra 7 155U, CPU, Windows, sentence-transformers 5.5.1). bge-m3는 `FlagEmbedding` 미설치 환경이라 이번 측정에서 제외.
+`tests/test_embed_model_bench.py`로 측정. 검색 품질이 아니라 **속도**만 비교한 수치입니다 (테스트 환경: Intel Core Ultra 7 155U, CPU, Windows, sentence-transformers 5.5.1, FlagEmbedding 1.4.0).
 
 | 모델 | 차원 | cold start | 단건 (평균) | 배치 10건 (건당) | 배치 50건 (건당) |
 |---|---|---|---|---|---|
 | multilingual-e5-base (기본) | 768 | 17.0s | 51.3ms | 22.1ms | 20.0ms |
 | multilingual-MiniLM-L12-v2 | 384 | 8.0s | 65.9ms | 12.5ms | 6.6ms |
 | multilingual-e5-large | 1024 | 10.6s | 115.6ms | 78.0ms | 79.1ms |
+| BAAI/bge-m3 | 1024 | 6.5s | 182.3ms | 186.6ms | 169.2ms |
 
-- **cold start**는 최초 모델 로드+추론 1회 비용(이후엔 재사용). 모델 용량과 대체로 비례하지 않는 건 e5-base가 아직 디스크 캐시가 덜 따뜻했을 수 있어서인데, 재측정 시 달라질 수 있습니다 — 참고용 수치입니다.
-- **단건(검색 시 쿼리 임베딩 비용)**: e5-base(default) 51ms, MiniLM 66ms, e5-large 116ms. 검색 요청마다 이 비용이 매번 발생합니다(캐싱 없음).
-- **배치(인덱싱 시 청크 임베딩 비용)**: e5-large가 건당 78~79ms로 가장 느리고, MiniLM이 건당 6.6ms로 가장 빠릅니다 — e5-base 대비 대략 3배.
+- **cold start**는 최초 모델 로드+추론 1회 비용(이후엔 재사용). 모델 용량과 대체로 비례하지 않는 건(bge-m3가 가장 크지만 cold start는 가장 짧음) 이미 받아둔 HuggingFace 캐시 상태·디스크 캐시 온도에 따라 달라지는 값이라 절대치보다는 참고용 수치입니다.
+- **단건(검색 시 쿼리 임베딩 비용)**: e5-base(default) 51ms, MiniLM 66ms, e5-large 116ms, bge-m3 182ms — 검색 요청마다 이 비용이 매번 발생합니다(캐싱 없음). bge-m3가 기본 모델 대비 약 3.6배 느립니다.
+- **배치(인덱싱 시 청크 임베딩 비용)**: bge-m3가 건당 169~187ms로 가장 느리고, MiniLM이 건당 6.6ms로 가장 빠릅니다 — e5-base 대비 bge-m3는 약 8~9배.
 - FTS5/sqlite-vec 쿼리 자체는 보통 수 ms~수십 ms대라, 검색 요청의 지연시간은 DB 조회가 아니라 이 임베딩 추론 비용이 지배적입니다.
-- bge-m3까지 비교하려면 `pip install FlagEmbedding` 후 `pytest tests/test_embed_model_bench.py -s -k bge`로 재측정하세요.
+- bge-m3는 8192토큰 컨텍스트와 검색 품질(MTEB 기준 일반적으로 e5-base 대비 우수) 대신 속도를 내주는 트레이드오프입니다 — 청크가 길거나 품질이 우선이면 이 지연시간 증가를 감수할 가치가 있는지 판단 기준으로 삼으세요.
 
 ### 커스텀 임베딩
 
