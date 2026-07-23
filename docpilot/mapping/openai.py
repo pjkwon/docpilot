@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 
 from docpilot.exceptions import MappingError
 from docpilot.mapping.base import BaseLLMMapper, MappingResult, TemplateSection
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gpt-4o"
 
@@ -66,8 +69,17 @@ class OpenAIMapper(BaseLLMMapper):
             raise MappingError("OpenAI API call failed", detail=str(e)) from e
         elapsed = time.perf_counter() - start
 
-        raw = response.choices[0].message.content or ""
-        mapped = self._parse_response(raw, sections)
+        choice = response.choices[0]
+        raw = choice.message.content or ""
+        truncated = choice.finish_reason == "length"
+        if truncated:
+            logger.warning(
+                "OpenAI 응답이 max_tokens로 잘림: finish_reason=%s, input_tokens=%d, "
+                "output_tokens=%d, 응답 끝부분=%r",
+                choice.finish_reason, response.usage.prompt_tokens,
+                response.usage.completion_tokens, raw[-200:],
+            )
+        mapped = self._parse_response(raw, sections, truncated=truncated)
 
         return MappingResult(
             sections=mapped,
@@ -75,4 +87,5 @@ class OpenAIMapper(BaseLLMMapper):
             input_tokens=response.usage.prompt_tokens,
             output_tokens=response.usage.completion_tokens,
             elapsed_seconds=elapsed,
+            metadata={"finish_reason": choice.finish_reason},
         )

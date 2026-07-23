@@ -111,11 +111,35 @@ def _append_margin(parent, hh: str, hc: str, left: str) -> None:
     etree.SubElement(parent, f"{hh}lineSpacing", {"type": "PERCENT", "value": "160", "unit": "HWPUNIT"})
 
 
+def _find_existing_para_pr(para_props_el, hh: str, hc: str, hp: str, bullet_id: int, depth: int) -> int | None:
+    """Scan for an hh:paraPr already wired to this (bullet_id, depth) — heading/idRef
+    identifies the bullet, the default-case margin left value identifies the depth."""
+    left = str(depth * _MARGIN_STEP)
+    for para_pr in para_props_el.findall(f"{hh}paraPr"):
+        heading = para_pr.find(f"{hh}heading")
+        if heading is None or heading.get("idRef") != str(bullet_id):
+            continue
+        default = para_pr.find(f"{hp}switch/{hp}default")
+        if default is None:
+            continue
+        margin = default.find(f"{hh}margin")
+        if margin is None:
+            continue
+        left_el = margin.find(f"{hc}left")
+        if left_el is not None and left_el.get("value") == left:
+            return int(para_pr.get("id"))
+    return None
+
+
 def ensure_bullet_para_pr(header_root, bullet_id: int, depth: int,
                            id_cache: dict[tuple[int, int], int]) -> int:
     """Idempotent per (bullet_id, depth) — a bullet glyph at a given nesting
     depth needs its own hh:paraPr (heading/idRef=bullet_id, margin scaled by
-    depth). Returns the new paraPrIDRef."""
+    depth). Returns the paraPrIDRef, reusing a matching hh:paraPr already in
+    the template (mirrors ensure_bullet's cross-call idempotency) — otherwise
+    building multiple content files against the same header_root (see
+    HwpxBuilder's per-section loop) piles up duplicate paraPr entries for the
+    same (bullet_id, depth), since id_cache itself starts empty on each call."""
     key = (bullet_id, depth)
     if key in id_cache:
         return id_cache[key]
@@ -127,6 +151,11 @@ def ensure_bullet_para_pr(header_root, bullet_id: int, depth: int,
     para_props_el = header_root.find(f"{hh}refList/{hh}paraProperties")
     if para_props_el is None:
         raise ValueError("hh:paraProperties not found in header.xml")
+
+    existing_id = _find_existing_para_pr(para_props_el, hh, hc, hp, bullet_id, depth)
+    if existing_id is not None:
+        id_cache[key] = existing_id
+        return existing_id
 
     from lxml import etree
     new_id = _max_id(para_props_el, hh, "paraPr") + 1

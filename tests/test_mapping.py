@@ -62,6 +62,28 @@ class TestParseResponse:
         with pytest.raises(MappingError, match="Failed to parse"):
             mapper._parse_response("not json at all", SECTIONS)
 
+    def test_invalid_json_without_truncation_flag_gives_generic_error(self):
+        """Malformed-but-not-truncated JSON must NOT be blamed on max_tokens."""
+        mapper = self._mapper()
+        with pytest.raises(MappingError, match="Failed to parse") as exc_info:
+            mapper._parse_response("not json at all", SECTIONS, truncated=False)
+        assert "max_tokens" not in str(exc_info.value)
+
+    def test_truncated_broken_json_blames_max_tokens(self):
+        mapper = self._mapper()
+        raw = '{"sections": {"서론": "내용이 중간에 끊'  # cut off mid-string, no closing brace
+        with pytest.raises(MappingError, match="max_tokens") as exc_info:
+            mapper._parse_response(raw, SECTIONS, truncated=True)
+        assert "잘려" in str(exc_info.value)
+
+    def test_truncated_missing_section_blames_max_tokens(self):
+        """JSON that parses fine but is missing a section because generation was cut off."""
+        mapper = self._mapper()
+        raw = json.dumps({"sections": {"서론": "A"}})
+        with pytest.raises(MappingError, match="max_tokens") as exc_info:
+            mapper._parse_response(raw, SECTIONS, truncated=True)
+        assert "결론" in str(exc_info.value)
+
 
 class TestClaudeMapper:
     def test_map_calls_api(self):
@@ -87,6 +109,39 @@ class TestClaudeMapper:
         with patch.dict("os.environ", {}, clear=True):
             with pytest.raises(MappingError, match="API key"):
                 ClaudeMapper(api_key=None)
+
+    def test_map_truncated_by_max_tokens_blames_max_tokens(self):
+        """stop_reason=max_tokens + broken JSON → error must name max_tokens as the cause."""
+        from docpilot.mapping.claude import ClaudeMapper
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text='{"sections": {"서론": "내용이 중간에 끊')]
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 50
+        mock_response.stop_reason = "max_tokens"
+
+        with patch("anthropic.Anthropic") as MockClient:
+            MockClient.return_value.messages.create.return_value = mock_response
+            mapper = ClaudeMapper(api_key="test-key")
+            with pytest.raises(MappingError, match="max_tokens"):
+                mapper.map(CONTENT, SECTIONS)
+
+    def test_map_broken_json_without_truncation_is_generic_error(self):
+        """Same broken JSON, but stop_reason=end_turn → must NOT blame max_tokens."""
+        from docpilot.mapping.claude import ClaudeMapper
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text='{"sections": {"서론": "내용이 중간에 끊')]
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 50
+        mock_response.stop_reason = "end_turn"
+
+        with patch("anthropic.Anthropic") as MockClient:
+            MockClient.return_value.messages.create.return_value = mock_response
+            mapper = ClaudeMapper(api_key="test-key")
+            with pytest.raises(MappingError) as exc_info:
+                mapper.map(CONTENT, SECTIONS)
+        assert "max_tokens" not in str(exc_info.value)
 
     def test_map_accepts_instructions_positionally(self):
         """RagMapper/generate_from_content call mapper.map(content, sections, instructions) —
@@ -184,6 +239,31 @@ class TestGeminiMapper:
 
         assert result.sections["서론"] == "내용A"
         assert result.input_tokens == 80
+
+    def test_map_truncated_by_max_tokens_blames_max_tokens(self):
+        """candidate.finish_reason=MAX_TOKENS + broken JSON → error must name max_tokens."""
+        import sys
+        from docpilot.mapping.gemini import GeminiMapper
+
+        mock_usage = MagicMock()
+        mock_usage.prompt_token_count = 80
+        mock_usage.candidates_token_count = 40
+
+        mock_candidate = MagicMock()
+        mock_candidate.finish_reason = "MAX_TOKENS"
+
+        mock_response = MagicMock()
+        mock_response.text = '{"sections": {"서론": "내용이 중간에 끊'
+        mock_response.usage_metadata = mock_usage
+        mock_response.candidates = [mock_candidate]
+
+        mock_genai = MagicMock()
+        mock_genai.Client.return_value.models.generate_content.return_value = mock_response
+
+        with patch.dict(sys.modules, {"google.genai": mock_genai}):
+            mapper = GeminiMapper(api_key="test-key")
+            with pytest.raises(MappingError, match="max_tokens"):
+                mapper.map(CONTENT, SECTIONS)
 
     def test_missing_api_key_raises(self):
         from docpilot.mapping.gemini import GeminiMapper
@@ -301,6 +381,22 @@ class TestOpenAIMapper:
 
         assert result.sections["결론"] == "내용B"
         assert result.model.startswith("gpt")
+
+    def test_map_truncated_by_max_tokens_blames_max_tokens(self):
+        """finish_reason=length + broken JSON → error must name max_tokens as the cause."""
+        from docpilot.mapping.openai import OpenAIMapper
+
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = '{"sections": {"서론": "내용이 중간에 끊'
+        mock_response.choices[0].finish_reason = "length"
+        mock_response.usage.prompt_tokens = 60
+        mock_response.usage.completion_tokens = 30
+
+        with patch("openai.OpenAI") as MockClient:
+            MockClient.return_value.chat.completions.create.return_value = mock_response
+            mapper = OpenAIMapper(api_key="test-key")
+            with pytest.raises(MappingError, match="max_tokens"):
+                mapper.map(CONTENT, SECTIONS)
 
     def test_complete_calls_api(self):
         from docpilot.mapping.openai import OpenAIMapper

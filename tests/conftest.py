@@ -97,6 +97,40 @@ def hwpx_template_with_header(tmp_path: Path) -> Path:
     return _make_hwpx_with_header(tmp_path / "template_with_header.hwpx")
 
 
+def _make_section_with_key(key: str) -> bytes:
+    """section*.xml body with a single {{key}} placeholder — same schema as _HWPX_SECTION0."""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
+        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
+  <hp:p id="1" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">
+    <hp:run charPrIDRef="0"><hp:t>{{{{{key}}}}}</hp:t></hp:run>
+    <hp:linesegarray>
+      <hp:lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="42520" flags="393216"/>
+    </hp:linesegarray>
+  </hp:p>
+</hs:sec>""".encode("utf-8")
+
+
+def _make_hwpx_multi_section(path: Path, keys: list[str],
+                              header_xml: bytes = _HWPX_HEADER) -> Path:
+    """HWPX with one section*.xml per key in *keys*, each holding that key's own
+    {{placeholder}} — for exercising HwpxBuilder's per-section-file fill loop."""
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("mimetype", "application/hwp+zip", compress_type=zipfile.ZIP_STORED)
+        for i, key in enumerate(keys):
+            zf.writestr(f"Contents/section{i}.xml", _make_section_with_key(key))
+        zf.writestr("Contents/header.xml", header_xml)
+        zf.writestr("META-INF/container.xml", b"<container/>")
+    return path
+
+
+@pytest.fixture()
+def hwpx_template_multi_section(tmp_path: Path) -> Path:
+    """2-section HWPX (section0.xml + section1.xml), each with its own
+    {{placeholder}} — 표지/본문."""
+    return _make_hwpx_multi_section(tmp_path / "multi_section.hwpx", ["표지", "본문"])
+
+
 @pytest.fixture()
 def sample_hwpx(tmp_path: Path) -> Path:
     return _make_hwpx(tmp_path / "sample.hwpx")

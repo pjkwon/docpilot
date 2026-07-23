@@ -148,7 +148,19 @@ class BaseLLMMapper(ABC):
 
 {example_obj}"""
 
-    def _parse_response(self, raw: str, sections: list[TemplateSection]) -> dict[str, str | list[str]]:
+    def _parse_response(
+        self,
+        raw: str,
+        sections: list[TemplateSection],
+        truncated: bool = False,
+    ) -> dict[str, str | list[str]]:
+        """
+        truncated: True only when the API itself reported the response was cut off by
+        the token limit (e.g. Claude stop_reason/OpenAI finish_reason == max_tokens).
+        Never inferred from the shape of the broken JSON — malformed-but-complete output
+        looks identical to truncated output at this point, so the distinction must come
+        from the provider's own signal, not from guessing.
+        """
         from docpilot.exceptions import MappingError
 
         data = {}
@@ -172,6 +184,11 @@ class BaseLLMMapper(ABC):
             else:
                 data = json.loads(raw)
         except (ValueError, json.JSONDecodeError) as e:
+            if truncated:
+                raise MappingError(
+                    "LLM 응답이 max_tokens 제한으로 잘려 JSON을 파싱하지 못함",
+                    detail=f"max_tokens 값을 늘려 재시도하세요. 응답 끝부분: ...{raw[-200:]}",
+                ) from e
             raise MappingError("Failed to parse LLM response as JSON", detail=raw[:200]) from e
 
         # Handle both {"sections": {...}} wrapping and direct dict {...} outputs
@@ -188,6 +205,11 @@ class BaseLLMMapper(ABC):
             if not s.optional and not s.is_list and s.name not in result
         ]
         if required_missing:
+            if truncated:
+                raise MappingError(
+                    "LLM 응답이 max_tokens 제한으로 잘려 일부 섹션이 누락됨",
+                    detail=f"누락된 섹션: {', '.join(required_missing)} — max_tokens 값을 늘려 재시도하세요.",
+                )
             raise MappingError(
                 "LLM response missing sections",
                 detail=", ".join(required_missing),

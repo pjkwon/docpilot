@@ -82,6 +82,14 @@ pip install "smart-docgen[pdf,openai,postgres]"            # 풀 스택
 - 우회: 한글에서 해당 docx를 직접 열어 "다른 이름으로 저장 → HWPX"로 수동 변환하세요.
 - HWP → HWPX, HWP/HWPX → DOCX는 이 이슈와 무관하며 정상 동작합니다.
 
+**Ollama 등 로컬 모델의 컨텍스트 한도.** Ollama는 요청에 `num_ctx`를 명시하지 않으면 모델이 지원하는
+최대 컨텍스트보다 훨씬 작은 기본값(예: 4096 — 모델이 32k를 지원해도)으로 로드합니다. 실제 로드된 값은
+`ollama ps`로 확인할 수 있습니다. RAG로 검색된 컨텍스트가 크면 이 기본값에 걸려 LLM 응답이 중간에
+잘릴 수 있으며, smart-docgen은 현재 `num_ctx`를 API 호출에 실어 보내지 않습니다 — 필요하면 Ollama
+서버를 `OLLAMA_CONTEXT_LENGTH` 환경변수나 커스텀 Modelfile로 설정하세요. 응답이 max_tokens/컨텍스트
+한도로 잘리면 `MappingError` 메시지에 "max_tokens 제한으로 잘림"이 명시되어 일반 JSON 파싱 실패와
+구분되므로, 이 메시지가 뜨면 `top_k`를 줄이거나 Ollama의 컨텍스트 한도를 늘려보세요.
+
 ## LLM 제공자
 
 smart-docgen은 5개 LLM 제공자를 지원합니다. `DocPilot(llm=...)` 또는 `DOCPILOT_LLM` 환경변수로 선택합니다.
@@ -193,7 +201,7 @@ pilot.index("./data", reindex=True)   # 전체 강제 재인덱싱
 
 | 포맷 | 구조 정보 |
 |------|-----------|
-| HWPX · DOCX | 스타일 이름 및 폰트 크기 기반 헤딩 감지. HWPX는 다중 섹션 문서 전체 추출 지원 (글상자·각주·표 셀 포함) |
+| HWPX · DOCX | 스타일 이름 및 폰트 크기 기반 헤딩 감지. HWPX는 다중 섹션 문서 전체 추출 지원 (글상자·각주·표 셀 포함) — 문서 생성 시에도 `section0.xml`뿐 아니라 모든 `section*.xml`의 플레이스홀더가 채워집니다 |
 | PDF (텍스트) | 페이지 내 폰트 크기 중앙값 대비 1.2× 이상인 라인을 `[헤딩]`으로 마킹 |
 | PDF (스캔본) | OCR 평문 (폰트 메타데이터 없음) |
 

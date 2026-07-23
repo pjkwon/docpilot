@@ -18,9 +18,6 @@ from docpilot.builder.html_table import build_hwpx_table_from_cells, build_markd
 from docpilot.builder.hwpx_bullets import ensure_bullet, ensure_bullet_para_pr, get_or_create_bullets_container
 from docpilot.exceptions import BuilderError
 
-# Candidate content file paths inside the HWPX ZIP (tried in order)
-_CONTENT_CANDIDATES = ["Contents/content.hml", "Contents/section0.xml"]
-
 
 class HwpxBuilder(BaseBuilder):
     def build(

@@ -91,6 +91,41 @@ class TestHwpxBuilder:
         # the run text itself must not carry a literal bullet glyph — HWP draws it from header.xml
         assert "●" not in section
 
+    def test_multi_section_all_placeholders_replaced(self, hwpx_template_multi_section: Path, tmp_path: Path):
+        """section0.xml and section1.xml each carry their own {{key}} — both must be
+        filled, not just the first content file found (regression: previously only
+        one candidate content file was ever opened)."""
+        import zipfile
+
+        output = tmp_path / "output.hwpx"
+        HwpxBuilder().build(
+            hwpx_template_multi_section, {"표지": "표지 내용", "본문": "본문 내용"}, output,
+        )
+
+        with zipfile.ZipFile(output, "r") as zf:
+            section0 = zf.read("Contents/section0.xml").decode("utf-8")
+            section1 = zf.read("Contents/section1.xml").decode("utf-8")
+
+        assert "표지 내용" in section0 and "{{표지}}" not in section0
+        assert "본문 내용" in section1 and "{{본문}}" not in section1
+
+    def test_multi_section_shared_bullet_para_pr_not_duplicated(
+        self, hwpx_template_multi_section: Path, tmp_path: Path,
+    ):
+        """Two sections each rendering a same-depth bullet list must share one
+        hh:paraPr in header.xml, not create a duplicate per section file."""
+        import zipfile
+
+        html = "<ul><li>항목</li></ul>"
+        output = tmp_path / "output.hwpx"
+        HwpxBuilder().build(hwpx_template_multi_section, {"표지": html, "본문": html}, output)
+
+        with zipfile.ZipFile(output, "r") as zf:
+            header = zf.read("Contents/header.xml").decode("utf-8")
+
+        assert header.count('char="●"') == 1
+        assert header.count('type="BULLET"') == 1
+
     def test_mixed_text_and_table_in_one_placeholder(self, hwpx_template: Path, tmp_path: Path):
         import zipfile
 

@@ -172,7 +172,10 @@ def index_folder(
 
     import sys
 
-    folder = Path(folder)
+    # Resolve so stored Document.source always matches the resolved form SearchFilter.source_pattern
+    # builds in generate()/retrieve_context() — otherwise a data_folder path whose short (8.3) and
+    # long forms differ (common for Windows %TEMP%) makes retrieval silently return zero chunks.
+    folder = Path(folder).resolve()
     if not folder.is_dir():
         raise SearchError("Not a directory", detail=str(folder))
 
