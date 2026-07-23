@@ -19,6 +19,26 @@ _W_TR = f"{{{_W_NS}}}tr"
 _W_TC = f"{{{_W_NS}}}tc"
 
 
+def _iter_containers(doc):
+    """Yield the document body plus every header/footer that has its own
+    definition — default, first-page, and even-page, for every section.
+
+    A header/footer with no definition of its own (``is_linked_to_previous``)
+    shares the prior section's part; skipping it avoids processing the same
+    underlying XML twice and avoids python-docx silently creating a blank
+    definition just because we touched ``.paragraphs`` on it.
+    """
+    yield doc
+    for section in doc.sections:
+        for hdr_ftr in (
+            section.header, section.footer,
+            section.first_page_header, section.first_page_footer,
+            section.even_page_header, section.even_page_footer,
+        ):
+            if not hdr_ftr.is_linked_to_previous:
+                yield hdr_ftr
+
+
 class DocxBuilder(BaseBuilder):
     def build(
         self,
@@ -41,23 +61,26 @@ class DocxBuilder(BaseBuilder):
         except Exception as e:
             raise BuilderError("Failed to open DOCX template", detail=str(e)) from e
 
-        # ── Phase 1: Table group expansion / contraction ──────────────────────
-        for table in doc.tables:
-            _process_table_groups(table, sections)
+        # Body + every header/footer part get the same three-phase treatment —
+        # placeholders can live in any of them, not just the body.
+        for container in _iter_containers(doc):
+            # ── Phase 1: Table group expansion / contraction ──────────────────
+            for table in container.tables:
+                _process_table_groups(table, sections)
 
-        # ── Phase 2: Fill all paragraphs and table cells ──────────────────────
-        for para in list(doc.paragraphs):
-            _replace_in_paragraph(para, sections)
+            # ── Phase 2: Fill all paragraphs and table cells ───────────────────
+            for para in list(container.paragraphs):
+                _replace_in_paragraph(para, sections)
 
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for para in list(cell.paragraphs):
-                        _replace_in_paragraph(para, sections)
+            for table in container.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for para in list(cell.paragraphs):
+                            _replace_in_paragraph(para, sections)
 
-        # ── Phase 3: Remove table rows where every cell is now empty ──────────
-        for table in doc.tables:
-            _remove_empty_optional_rows(table, sections)
+            # ── Phase 3: Remove table rows where every cell is now empty ───────
+            for table in container.tables:
+                _remove_empty_optional_rows(table, sections)
 
         try:
             doc.save(str(output))
