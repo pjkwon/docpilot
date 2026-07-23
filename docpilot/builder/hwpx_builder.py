@@ -43,34 +43,39 @@ class HwpxBuilder(BaseBuilder):
             tmp_path = Path(tmp)
             _unpack(template, tmp_path)
 
-            content_file = next(
-                (tmp_path / cp for cp in _CONTENT_CANDIDATES if (tmp_path / cp).exists()),
-                None,
-            )
-            if content_file is None:
+            content_files = []
+            contents_dir = tmp_path / "Contents"
+            if contents_dir.exists():
+                for f in sorted(contents_dir.glob("section*.xml")):
+                    content_files.append(f)
+                for f in sorted(contents_dir.glob("content.hml")):
+                    content_files.append(f)
+            
+            if not content_files:
                 raise BuilderError(
-                    "No content file found in HWPX (tried content.hml, section0.xml)",
+                    "No content files found in HWPX (section*.xml or content.hml)",
                     detail=str(template),
                 )
-
-            tree = etree.parse(str(content_file))
-            root = tree.getroot()
-
-            # header.xml carries bullet/numbering definitions — only present
-            # for the section0.xml-schema templates, never for the minimal
-            # content.hml schema. Lists degrade to glyph-prefixed text when absent.
+            
             header_file = tmp_path / "Contents" / "header.xml"
             header_tree = etree.parse(str(header_file)) if header_file.exists() else None
             header_root = header_tree.getroot() if header_tree is not None else None
 
-            header_dirty = _replace_placeholders(root, sections, header_root=header_root)
-
-            tree.write(
-                str(content_file),
-                xml_declaration=True,
-                encoding="UTF-8",
-                pretty_print=False,
-            )
+            header_dirty = False
+            for content_file in content_files:
+                tree = etree.parse(str(content_file))
+                root = tree.getroot()
+                
+                dirty = _replace_placeholders(root, sections, header_root=header_root)
+                if dirty:
+                    header_dirty = True
+                
+                tree.write(
+                    str(content_file),
+                    xml_declaration=True,
+                    encoding="UTF-8",
+                    pretty_print=False,
+                )
 
             if header_dirty and header_tree is not None:
                 header_tree.write(

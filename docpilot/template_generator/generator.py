@@ -144,7 +144,9 @@ def _build_template(
 
         content_file = tmp_path / _CONTENT_PATH
         if not content_file.exists():
-            raise TemplateError("content.hml not found in base HWPX")
+            content_file = tmp_path / "Contents/section0.xml"
+        if not content_file.exists():
+            raise TemplateError("content.hml or section0.xml not found in base HWPX")
 
         tree = etree.parse(str(content_file))
         root = tree.getroot()

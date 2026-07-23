@@ -589,6 +589,18 @@ def _infer_sections_from_content(content: str, mapper) -> list[str]:
         ],
     )
     raw = mapping.sections.get("sections", "[]")
+    if isinstance(raw, list):
+        return [str(s) for s in raw if s]
+    if isinstance(raw, str):
+        raw_clean = raw.strip()
+        if raw_clean.startswith("[") and raw_clean.endswith("]"):
+            import ast
+            try:
+                parsed = ast.literal_eval(raw_clean)
+                if isinstance(parsed, list):
+                    return [str(s) for s in parsed if s]
+            except Exception:
+                pass
     try:
         sections = json.loads(raw)
         if isinstance(sections, list):
