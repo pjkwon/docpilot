@@ -9,6 +9,7 @@
 - **다양한 출력 포맷** — HWPX, DOCX, PDF
 - **LLM 교체 가능** — Claude · OpenAI · Gemini · Grok · Ollama, 동일 인터페이스
 - **하이브리드 검색 (RRF)** — 형태소 AND(FTS5·BM25) + 벡터(sqlite-vec/pgvector)를 동시 실행 후 Reciprocal Rank Fusion으로 병합. 별도 설정 없이 `multilingual-e5-base` 로컬 모델 기본 내장
+- **로마자-한글 별칭 검색** — 문서 내 "에코플라스틱(Ecoplastic)" 같은 병기를 인덱싱 시 자동 추출해, 로마자 쿼리(`"eco"`)로도 한글 전용 청크를 검색
 - **임베딩 제공자 선택** — 기본(multilingual-e5-base 로컬) · OpenAI · Voyage AI · BGE-M3(로컬) · sentence-transformers(로컬), 동일 인터페이스
 - **스타일 인식 생성 (HWPX·DOCX)** — 플레이스홀더 위치의 폰트 크기·정렬·표 셀 너비를 자동 분석해 LLM에 전달, 서식에 어울리는 내용 생성
 - **템플릿 자동 생성 (HWPX·DOCX)** — 샘플 문서에서 공통 섹션 구조 추출 (샘플 스타일 자동 상속)
@@ -729,6 +730,28 @@ results = embedding.search("사업 계획", embed_fn=openai_embed_fn())
 # 키워드 정확 검색
 results = exact.search("사업 계획")
 ```
+
+### 로마자-한글 별칭 검색 (Term Alias)
+
+인덱싱된 문서가 "에코플라스틱(Ecoplastic)"처럼 한글 용어와 로마자 표기를 괄호로 병기하면,
+인덱싱 시점에 `(한글 용어, 로마자 표기)` 쌍이 전역 별칭 테이블(`term_aliases`)에 자동 저장됩니다.
+병기는 문서 전체에서 딱 한 번만 등장해도 되고, 그 뒤로는 같은 용어가 조사만 붙은 채
+("에코플라스틱은…", "에코플라스틱의…") 병기 없이 반복돼도 모두 매칭 대상이 됩니다.
+
+```python
+pilot.index("./data")  # "에코플라스틱(Ecoplastic)" 병기가 있는 문서 인덱싱
+
+results = pilot.search("eco", mode="bm25")   # 로마자 접두어만으로도 "에코플라스틱" 문서가 검색됨
+results = pilot.search("eco", mode="exact")  # exact 모드도 동일하게 별칭을 반영
+```
+
+- 추출은 kiwipiepy 품사 태그 기반 규칙만 사용합니다(LLM 호출 없음). 병기가 없는 용어는
+  추측하지 않으므로, 문서에 원어 병기 관행이 없는 경우 이 기능의 효과는 제한적입니다.
+- 별칭 매칭은 로마자 쿼리 단어의 **접두어**를 `latin_alias`와 대소문자 무시 비교합니다 —
+  `"eco"`, `"Eco"`, `"ecoplastic"` 모두 `"Ecoplastic"` 별칭에 매치됩니다.
+- 별칭으로만 매치된 결과는 `exact.search()`에서 점수 0으로 최하위에 배치됩니다 — 원문 그대로
+  일치하는 결과가 항상 우선합니다.
+- 구현: `docpilot.search.alias` (`extract_pairs`/`store_aliases`/`expand_query`).
 
 ### 검색 필터 (SearchFilter)
 

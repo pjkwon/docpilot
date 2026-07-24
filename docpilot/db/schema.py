@@ -93,3 +93,29 @@ class TemplateRecord(Base):
         server_default=func.now(),
         nullable=False,
     )
+
+
+class TermAlias(Base):
+    """
+    Korean term <-> Latin/romanized alias pairs, extracted from bilingual
+    parenthetical notation found in indexed documents (e.g. "에코플라스틱(Ecoplastic)").
+
+    Used to expand search queries so a Latin-script query term (e.g. "eco",
+    "ecoplastic") can retrieve chunks that only contain the Korean form.
+    """
+
+    __tablename__ = "term_aliases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    korean_term: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    latin_alias: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    source_document_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (UniqueConstraint("korean_term", "latin_alias", name="uq_term_alias"),)

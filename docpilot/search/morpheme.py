@@ -25,7 +25,7 @@ def search(
     if not query.strip():
         raise SearchError("Query must not be empty")
 
-    query_morphemes = _tokenize(query)
+    query_morphemes = _tokenize(query) | _alias_morphemes(query)
     if not query_morphemes:
         raise SearchError("No morphemes extracted from query", detail=query)
 
@@ -130,3 +130,29 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     if not a or not b:
         return 0.0
     return len(a & b) / len(a | b)
+
+
+def _alias_morphemes(query: str) -> set[str]:
+    """
+    Expand a Latin-script query fragment (e.g. "eco") to the morphemes of any
+    Korean term registered as its alias (e.g. "에코플라스틱" -> {"에코", "플라스틱"}).
+
+    A trailing particle is appended before tokenizing each alias term because
+    kiwipiepy's bare-noun segmentation differs from how the term was split when
+    it was indexed inside real sentences (see docpilot.search.alias); tokenizing
+    both the bare and particle-suffixed forms covers both outcomes.
+    """
+    from docpilot.db import client
+    from docpilot.search import alias as alias_mod
+
+    try:
+        with client.session() as db:
+            terms = alias_mod.expand_query(db, query)
+    except Exception:
+        return set()
+
+    morphemes: set[str] = set()
+    for term in terms:
+        morphemes |= _tokenize(term)
+        morphemes |= _tokenize(term + "은")
+    return morphemes

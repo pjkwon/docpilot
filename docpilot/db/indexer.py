@@ -64,6 +64,8 @@ def index(
         db.add(db_doc)
         db.flush()  # get db_doc.id before adding chunks
 
+        _set_aliases(db, doc.content, db_doc.id)
+
         chunks = _split(doc.content, chunk_size, overlap, min_chunk_size)
         db_chunks: list[Chunk] = []
         for i, chunk_text in enumerate(chunks):
@@ -326,6 +328,17 @@ def _split(text: str, chunk_size: int, overlap: int, min_chunk_size: int = 0) ->
         chunks = merged
 
     return chunks
+
+
+def _set_aliases(db: Any, doc_content: str, document_id: int) -> None:
+    from docpilot.search import alias as alias_mod
+
+    try:
+        pairs = alias_mod.extract_pairs(doc_content)
+    except Exception:
+        return  # kiwipiepy not installed or tokenize failed — skip, indexing continues
+    if pairs:
+        alias_mod.store_aliases(db, pairs, source_document_id=document_id)
 
 
 def _set_morphemes(db: Any, chunk_id: int, chunk_text: str) -> None:
