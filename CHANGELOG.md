@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Added
+- `tests/test_embed_quality_bench.py`: 로컬 임베딩 모델 4종(MiniLM/e5-base/e5-large/bge-m3) 검색 품질 비교 벤치마크 — 15개 주제 클러스터 합성 코퍼스 기준 Recall@6/MRR/nDCG@6 측정, README에 결과 반영
+
 ## [0.2.0] - 2026-07-22
 
 ### Added
