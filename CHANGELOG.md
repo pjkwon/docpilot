@@ -5,12 +5,26 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-24
+
 ### Added
 - 로마자-한글 별칭 검색 — 인덱싱 시 문서 내 "에코플라스틱(Ecoplastic)" 같은 병기를 kiwipiepy 품사 태그 규칙으로 자동 추출해 전역 `term_aliases` 테이블에 저장(LLM 미사용). `search(mode="bm25"|"exact")`가 로마자 쿼리(`"eco"`)로도 한글 전용 청크를 검색하도록 쿼리를 확장. 구현: `docpilot.search.alias`
 - `tests/test_embed_quality_bench.py`: 로컬 임베딩 모델 4종(MiniLM/e5-base/e5-large/bge-m3) 검색 품질 비교 벤치마크 — 15개 주제 클러스터 합성 코퍼스 기준 Recall@6/MRR/nDCG@6 측정, README에 결과 반영
 
 ### Fixed
 - `morpheme.search()`가 순수 로마자 단독 쿼리(예: `"eco"`)에 대해 형태소가 0개 추출됐다는 이유로 무조건 `SearchError`를 던지던 버그 수정 — 별칭 확장 결과를 먼저 합친 뒤 빈 집합 여부를 판단하도록 순서 변경
+
+## [0.2.1] - 2026-07-23
+
+### Added
+- MCP 서버에 RAG 검색 전용 도구(`retrieve_context`) 추가
+
+### Fixed
+- LLM 응답 truncation 원인 구분 (max_tokens 잘림 vs 그 외 JSON 파싱 실패)
+- RAG 검색 `source_pattern` 경로 불일치로 검색 0건 반환되던 버그 수정
+- HWPX 다중 섹션 빌드 미지원 버그 수정 (section0.xml 외 나머지 섹션도 채움)
+- HWPX 불릿 `paraPr` 헤더 중복 생성 버그 수정
+- DOCX 헤더/푸터(기본·첫 페이지·짝수 페이지) 플레이스홀더 미채움 버그 수정
 
 ## [0.2.0] - 2026-07-22
 
