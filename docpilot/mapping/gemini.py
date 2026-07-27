@@ -4,7 +4,7 @@ import logging
 import os
 import time
 
-from docpilot.exceptions import MappingError
+from docpilot.exceptions import ContextExceededError, MappingError, is_context_overflow_error
 from docpilot.mapping.base import BaseLLMMapper, MappingResult, TemplateSection
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,8 @@ class GeminiMapper(BaseLLMMapper):
                 config=types.GenerateContentConfig(max_output_tokens=self._max_tokens),
             )
         except Exception as e:
+            if is_context_overflow_error(str(e)):
+                raise ContextExceededError("Gemini API가 컨텍스트 초과로 요청을 거부함", detail=str(e)) from e
             raise MappingError("Gemini API call failed", detail=str(e)) from e
         elapsed = time.perf_counter() - start
 

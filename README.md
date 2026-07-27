@@ -85,11 +85,26 @@ pip install "smart-docgen[pdf,openai,postgres]"            # 풀 스택
 
 **Ollama 등 로컬 모델의 컨텍스트 한도.** Ollama는 요청에 `num_ctx`를 명시하지 않으면 모델이 지원하는
 최대 컨텍스트보다 훨씬 작은 기본값(예: 4096 — 모델이 32k를 지원해도)으로 로드합니다. 실제 로드된 값은
-`ollama ps`로 확인할 수 있습니다. RAG로 검색된 컨텍스트가 크면 이 기본값에 걸려 LLM 응답이 중간에
-잘릴 수 있으며, smart-docgen은 현재 `num_ctx`를 API 호출에 실어 보내지 않습니다 — 필요하면 Ollama
-서버를 `OLLAMA_CONTEXT_LENGTH` 환경변수나 커스텀 Modelfile로 설정하세요. 응답이 max_tokens/컨텍스트
-한도로 잘리면 `MappingError` 메시지에 "max_tokens 제한으로 잘림"이 명시되어 일반 JSON 파싱 실패와
-구분되므로, 이 메시지가 뜨면 `top_k`를 줄이거나 Ollama의 컨텍스트 한도를 늘려보세요.
+`ollama ps`로 확인할 수 있습니다. `DocPilot(llm="ollama", num_ctx=8192)`처럼 `num_ctx`를 넘기면
+그 값이 요청마다 Ollama에 전달되고(서버가 그 이상으로 미리 로드돼 있어야 합니다 — `num_ctx`는 요청
+옵션일 뿐 서버가 로드한 컨텍스트 자체를 늘리지 않습니다. 서버 쪽 최대치는 여전히
+`OLLAMA_CONTEXT_LENGTH` 환경변수나 커스텀 Modelfile로 설정), RAG/content로 조립된 프롬프트가
+바이트 기반 추정치로 `num_ctx`(+ `max_tokens`)를 넘으면 API 호출 전에 `ContextExceededError`로
+즉시 막습니다(추정치라 ±30% 오차 가능 — 정확한 카운트는 Ollama가 토큰 카운팅 API를 제공하지 않아
+불가능합니다). `num_ctx`를 넘기지 않으면 이전과 동일하게 아무 사전 검증 없이 그대로 전송되며, Ollama
+기본값에 걸려 프롬프트 앞부분이 조용히 잘리거나 응답이 중간에 끊길 수 있습니다.
+
+`generate()`(RAG 경로)를 쓰면 `ContextExceededError`가 나든(Ollama 사전 차단), Claude/OpenAI/Gemini/Grok이
+컨텍스트 초과로 요청을 거부하든 `RagMapper`가 자동으로 `top_k`를 절반씩 줄여 최대 2회 재시도합니다
+(10 → 5 → 2 등, 1까지 줄여도 실패하면 최종적으로 에러를 올립니다). `generate_from_content()`처럼 RAG가
+없는 경로는 `top_k` 자체가 없어 재시도 대상이 아니며, `max_input_tokens`로 사전에 상한을 걸어야 합니다.
+
+Ollama는 컨텍스트 초과와 별개로 VRAM이 부족하면 에러 없이 CPU로 스필오버되며 20~50배 느려질 수 있어
+("멈춘 것"처럼 보임), `OllamaMapper`/`DocPilot(llm="ollama", ...)`는 기본 180초 요청 타임아웃을 둡니다
+— 정상적인 요청도 하드웨어에 따라 이보다 오래 걸릴 수 있으니 필요시 `OllamaMapper(timeout=...)`로
+조정하세요. 응답이 max_tokens/컨텍스트 한도로 잘리면 `MappingError` 메시지에 "max_tokens 제한으로 잘림"이
+명시되어 일반 JSON 파싱 실패와 구분되므로, 이 메시지가 뜨면 `top_k`를 줄이거나 `num_ctx`(및 서버의
+컨텍스트 한도)를 늘려보세요.
 
 ## LLM 제공자
 
@@ -1282,6 +1297,7 @@ from docpilot.exceptions import (
     DocPilotError,
     IngestionError,
     MappingError,
+    ContextExceededError,   # MappingError의 서브클래스 — 컨텍스트 초과로 거부/차단된 경우
     BuilderError,
     ConversionError,
     SearchError,
@@ -1290,6 +1306,8 @@ from docpilot.exceptions import (
 
 try:
     pilot.generate(...)
+except ContextExceededError as e:
+    print(e.detail)   # RagMapper가 top_k를 줄여가며 재시도했지만 끝내 실패한 경우
 except MappingError as e:
     print(e.detail)   # 상세 오류 메시지
 except DocPilotError as e:

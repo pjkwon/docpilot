@@ -175,6 +175,10 @@ def _b(base_url: str | None) -> dict:
     return {"base_url": base_url} if base_url else {}
 
 
+def _n(num_ctx: int | None) -> dict:
+    return {"num_ctx": num_ctx} if num_ctx else {}
+
+
 def _ingest_instructions_doc(path: Path) -> str:
     """지침 문서를 읽어 텍스트로 반환한다. 지원하지 않는 형식이면 빈 문자열 반환."""
     from docpilot.ingestion import text as text_ing
@@ -258,12 +262,6 @@ def _estimate_tokens_from_folder(folder: Path, n_sections: int) -> int:
 _DEFAULT_MAX_INPUT_TOKENS_WARN = 50_000
 
 
-def _estimate_tokens_raw(text: str) -> int:
-    """Rough token estimate for text that goes into the prompt in full — no RAG retrieval
-    subset, so (unlike _estimate_tokens_from_folder) no per-section cap applies."""
-    return int(len(text.encode("utf-8")) * 0.4)
-
-
 def _resolve_instructions(
     extra_instructions: str | None,
     sidecar_instructions: str,
@@ -313,7 +311,8 @@ def _resolve_content(content: str | list[str | Path] | list[IngestedDocument]) -
 def _check_content_size(content_str: str, max_input_tokens: int | None) -> None:
     """Warn or raise on a rough byte-based token estimate — *_from_content() methods send
     content in full with no RAG top_k to bound its size automatically."""
-    estimated_tokens = _estimate_tokens_raw(content_str)
+    from docpilot.tokens import estimate_tokens_raw
+    estimated_tokens = estimate_tokens_raw(content_str)
     if max_input_tokens is not None:
         if estimated_tokens > max_input_tokens:
             raise MappingError(
@@ -1022,17 +1021,27 @@ class DocPilot:
         api_key: str | None = None,
         model: str | None = None,
         base_url: str | None = None,
+        num_ctx: int | None = None,
         database_url: str | None = None,
         embed_fn=None,
         use_reranker: bool = False,
     ) -> None:
+        """
+        num_ctx: Ollama-only — the context window (input+output token budget) the server
+            loaded the model with. Ollama defaults to a small value (often 4096) regardless
+            of what the model actually supports, and silently truncates prompts that exceed
+            it rather than erroring — see README "Ollama 등 로컬 모델의 컨텍스트 한도". Pass the
+            same value your Ollama server was started/configured with (check via `ollama ps`)
+            so docpilot can (a) forward it as a per-request option and (b) reject oversized
+            RAG/content prompts before sending them, instead of silently losing context.
+        """
         self._llm = llm or os.environ.get("DOCPILOT_LLM", "claude")
         self._api_key = api_key
         if embed_fn is None:
             from docpilot.search.embedding import default_embed_fn
             embed_fn = default_embed_fn()  # None when sentence-transformers not installed
         self._embed_fn = embed_fn
-        base_mapper = self._build_mapper(self._llm, api_key, model, base_url)
+        base_mapper = self._build_mapper(self._llm, api_key, model, base_url, num_ctx)
 
         from docpilot.mapping.rag import RagMapper
         self._mapper = base_mapper
@@ -1459,7 +1468,8 @@ class DocPilot:
         est_output = len(sections) * _EST_OUTPUT_TOKENS_PER_SECTION
 
         if quick:
-            input_tokens = _estimate_tokens_raw(content_str)
+            from docpilot.tokens import estimate_tokens_raw
+            input_tokens = estimate_tokens_raw(content_str)
             input_cost = input_tokens / 1_000_000 * in_price
             output_cost = est_output / 1_000_000 * out_price
             lines = [
@@ -1605,7 +1615,13 @@ class DocPilot:
         return suggest_extras(folder)
 
     @staticmethod
-    def _build_mapper(llm: str, api_key: str | None, model: str | None, base_url: str | None):
+    def _build_mapper(
+        llm: str,
+        api_key: str | None,
+        model: str | None,
+        base_url: str | None,
+        num_ctx: int | None = None,
+    ):
         from docpilot.mapping import ClaudeMapper, OpenAIMapper, GeminiMapper
         from docpilot.mapping.openai_compat import GrokMapper, OllamaMapper
 
@@ -1619,7 +1635,7 @@ class DocPilot:
             case "grok":
                 return GrokMapper(api_key=api_key, **(_m(model)))
             case "ollama":
-                return OllamaMapper(**(_m(model)), **(_b(base_url)))
+                return OllamaMapper(**(_m(model)), **(_b(base_url)), **(_n(num_ctx)))
             case _:
                 raise MappingError(
                     f"Unknown LLM '{llm}'. "

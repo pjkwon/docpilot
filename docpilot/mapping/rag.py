@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from docpilot.exceptions import ContextExceededError
 from docpilot.mapping.base import BaseLLMMapper, MappingResult, TemplateSection
 from docpilot.search.models import SearchFilter, SearchResult
 
 if TYPE_CHECKING:
     from docpilot.ingestion.models import IngestedDocument
 
+logger = logging.getLogger(__name__)
+
 EmbedFn = Callable[[str], list[float]]
+
+_MAX_CONTEXT_RETRIES = 2
 
 
 class RagMapper:
@@ -48,8 +54,21 @@ class RagMapper:
         top_k: int | None = None,
         filters: SearchFilter | None = None,
     ) -> MappingResult:
-        content = self.retrieve_content(sections, top_k=top_k, filters=filters)
-        return self._mapper.map(content, sections, instructions)
+        effective_top_k = top_k if top_k is not None else self._top_k
+
+        for attempt in range(_MAX_CONTEXT_RETRIES + 1):
+            content = self.retrieve_content(sections, top_k=effective_top_k, filters=filters)
+            try:
+                return self._mapper.map(content, sections, instructions)
+            except ContextExceededError:
+                if attempt >= _MAX_CONTEXT_RETRIES or effective_top_k <= 1:
+                    raise
+                new_top_k = max(1, effective_top_k // 2)
+                logger.warning(
+                    "컨텍스트 초과로 top_k %d → %d로 줄여 재시도 (%d/%d)",
+                    effective_top_k, new_top_k, attempt + 1, _MAX_CONTEXT_RETRIES,
+                )
+                effective_top_k = new_top_k
 
     def retrieve_content(
         self,
