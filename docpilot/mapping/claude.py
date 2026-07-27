@@ -18,15 +18,20 @@ class ClaudeMapper(BaseLLMMapper):
         api_key: str | None = None,
         model: str = DEFAULT_MODEL,
         max_tokens: int = 8096,
+        temperature: float | None = None,
     ) -> None:
         self._model = model
         self._max_tokens = max_tokens
+        self._temperature = temperature
         self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not self._api_key:
             raise MappingError(
                 "Anthropic API key not provided",
                 detail="Pass api_key or set ANTHROPIC_API_KEY env var",
             )
+
+    def _temp_kwargs(self) -> dict:
+        return {"temperature": self._temperature} if self._temperature is not None else {}
 
     def complete(self, prompt: str, max_tokens: int = 2048) -> str:
         try:
@@ -39,6 +44,7 @@ class ClaudeMapper(BaseLLMMapper):
                 model=self._model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
+                **self._temp_kwargs(),
             )
         except Exception as e:
             raise MappingError("Claude API call failed", detail=str(e)) from e
@@ -59,6 +65,7 @@ class ClaudeMapper(BaseLLMMapper):
                 model=self._model,
                 max_tokens=self._max_tokens,
                 messages=[{"role": "user", "content": prompt}],
+                **self._temp_kwargs(),
             )
         except Exception as e:
             if is_context_overflow_error(str(e)):

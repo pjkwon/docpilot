@@ -18,9 +18,11 @@ class GeminiMapper(BaseLLMMapper):
         api_key: str | None = None,
         model: str = DEFAULT_MODEL,
         max_tokens: int = 8096,
+        temperature: float | None = None,
     ) -> None:
         self._model = model
         self._max_tokens = max_tokens
+        self._temperature = temperature
         self._api_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not self._api_key:
             raise MappingError(
@@ -39,7 +41,9 @@ class GeminiMapper(BaseLLMMapper):
             response = client.models.generate_content(
                 model=self._model,
                 contents=prompt,
-                config=types.GenerateContentConfig(max_output_tokens=max_tokens),
+                config=types.GenerateContentConfig(
+                    max_output_tokens=max_tokens, temperature=self._temperature,
+                ),
             )
         except Exception as e:
             raise MappingError("Gemini API call failed", detail=str(e)) from e
@@ -65,7 +69,9 @@ class GeminiMapper(BaseLLMMapper):
             response = client.models.generate_content(
                 model=self._model,
                 contents=prompt,
-                config=types.GenerateContentConfig(max_output_tokens=self._max_tokens),
+                config=types.GenerateContentConfig(
+                    max_output_tokens=self._max_tokens, temperature=self._temperature,
+                ),
             )
         except Exception as e:
             if is_context_overflow_error(str(e)):

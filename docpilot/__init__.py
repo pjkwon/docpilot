@@ -179,6 +179,10 @@ def _n(num_ctx: int | None) -> dict:
     return {"num_ctx": num_ctx} if num_ctx else {}
 
 
+def _t(temperature: float | None) -> dict:
+    return {"temperature": temperature} if temperature is not None else {}
+
+
 def _ingest_instructions_doc(path: Path) -> str:
     """지침 문서를 읽어 텍스트로 반환한다. 지원하지 않는 형식이면 빈 문자열 반환."""
     from docpilot.ingestion import text as text_ing
@@ -1022,6 +1026,7 @@ class DocPilot:
         model: str | None = None,
         base_url: str | None = None,
         num_ctx: int | None = None,
+        temperature: float | None = None,
         database_url: str | None = None,
         embed_fn=None,
         use_reranker: bool = False,
@@ -1034,6 +1039,11 @@ class DocPilot:
             same value your Ollama server was started/configured with (check via `ollama ps`)
             so docpilot can (a) forward it as a per-request option and (b) reject oversized
             RAG/content prompts before sending them, instead of silently losing context.
+        temperature: sampling temperature forwarded to whichever provider is active. None
+            (default) leaves the provider/model's own default untouched. Lower it (e.g. 0)
+            for more deterministic, structured output — useful since the JSON-mapping prompt
+            can otherwise produce inconsistent results run to run (observed with local
+            Ollama models especially; see llm_benchmark_report.md).
         """
         self._llm = llm or os.environ.get("DOCPILOT_LLM", "claude")
         self._api_key = api_key
@@ -1041,7 +1051,7 @@ class DocPilot:
             from docpilot.search.embedding import default_embed_fn
             embed_fn = default_embed_fn()  # None when sentence-transformers not installed
         self._embed_fn = embed_fn
-        base_mapper = self._build_mapper(self._llm, api_key, model, base_url, num_ctx)
+        base_mapper = self._build_mapper(self._llm, api_key, model, base_url, num_ctx, temperature)
 
         from docpilot.mapping.rag import RagMapper
         self._mapper = base_mapper
@@ -1621,21 +1631,24 @@ class DocPilot:
         model: str | None,
         base_url: str | None,
         num_ctx: int | None = None,
+        temperature: float | None = None,
     ):
         from docpilot.mapping import ClaudeMapper, OpenAIMapper, GeminiMapper
         from docpilot.mapping.openai_compat import GrokMapper, OllamaMapper
 
         match llm.lower():
             case "claude":
-                return ClaudeMapper(api_key=api_key, **(_m(model)))
+                return ClaudeMapper(api_key=api_key, **(_m(model)), **(_t(temperature)))
             case "openai":
-                return OpenAIMapper(api_key=api_key, **(_m(model)))
+                return OpenAIMapper(api_key=api_key, **(_m(model)), **(_t(temperature)))
             case "gemini":
-                return GeminiMapper(api_key=api_key, **(_m(model)))
+                return GeminiMapper(api_key=api_key, **(_m(model)), **(_t(temperature)))
             case "grok":
-                return GrokMapper(api_key=api_key, **(_m(model)))
+                return GrokMapper(api_key=api_key, **(_m(model)), **(_t(temperature)))
             case "ollama":
-                return OllamaMapper(**(_m(model)), **(_b(base_url)), **(_n(num_ctx)))
+                return OllamaMapper(
+                    **(_m(model)), **(_b(base_url)), **(_n(num_ctx)), **(_t(temperature)),
+                )
             case _:
                 raise MappingError(
                     f"Unknown LLM '{llm}'. "

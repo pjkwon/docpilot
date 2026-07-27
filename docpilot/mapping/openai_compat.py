@@ -28,6 +28,7 @@ class OpenAICompatMapper(BaseLLMMapper):
         max_tokens: int = 8096,
         num_ctx: int | None = None,
         timeout: float | None = None,
+        temperature: float | None = None,
     ) -> None:
         self._model = model
         self._base_url = base_url
@@ -35,6 +36,10 @@ class OpenAICompatMapper(BaseLLMMapper):
         self._max_tokens = max_tokens
         self._num_ctx = num_ctx
         self._timeout = timeout
+        self._temperature = temperature
+
+    def _temp_kwargs(self) -> dict:
+        return {"temperature": self._temperature} if self._temperature is not None else {}
 
     def _extra_body(self) -> dict:
         # Ollama-specific request option — openai SDK has no native num_ctx param, so it
@@ -73,6 +78,7 @@ class OpenAICompatMapper(BaseLLMMapper):
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
                 extra_body=self._extra_body(),
+                **self._temp_kwargs(),
             )
         except Exception as e:
             if is_context_overflow_error(str(e)):
@@ -104,6 +110,7 @@ class OpenAICompatMapper(BaseLLMMapper):
                 max_tokens=self._max_tokens,
                 messages=[{"role": "user", "content": prompt}],
                 extra_body=self._extra_body(),
+                **self._temp_kwargs(),
             )
         except Exception as e:
             if is_context_overflow_error(str(e)):
@@ -141,6 +148,7 @@ def GrokMapper(
     api_key: str | None = None,
     model: str = "grok-3",
     max_tokens: int = 8096,
+    temperature: float | None = None,
 ) -> OpenAICompatMapper:
     key = api_key or os.environ.get("XAI_API_KEY")
     if not key:
@@ -148,7 +156,10 @@ def GrokMapper(
             "Grok API key not provided",
             detail="Pass api_key or set XAI_API_KEY env var",
         )
-    return OpenAICompatMapper(model=model, base_url=_GROK_BASE_URL, api_key=key, max_tokens=max_tokens)
+    return OpenAICompatMapper(
+        model=model, base_url=_GROK_BASE_URL, api_key=key, max_tokens=max_tokens,
+        temperature=temperature,
+    )
 
 
 _OLLAMA_DEFAULT_TIMEOUT = 180.0  # seconds — Ollama has no explicit context-overflow error;
@@ -163,9 +174,10 @@ def OllamaMapper(
     max_tokens: int = 8096,
     num_ctx: int | None = None,
     timeout: float = _OLLAMA_DEFAULT_TIMEOUT,
+    temperature: float | None = None,
 ) -> OpenAICompatMapper:
     url = base_url or os.environ.get("OLLAMA_BASE_URL", _OLLAMA_BASE_URL)
     return OpenAICompatMapper(
         model=model, base_url=url, api_key="ollama", max_tokens=max_tokens,
-        num_ctx=num_ctx, timeout=timeout,
+        num_ctx=num_ctx, timeout=timeout, temperature=temperature,
     )

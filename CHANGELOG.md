@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Added
+- `DocPilot(temperature=...)` — 5개 LLM 제공자(Claude/OpenAI/Gemini/Grok/Ollama) 공통으로 샘플링 temperature 지정 가능. 미지정 시 제공자/모델 기본값 유지
+
 ## [0.2.3] - 2026-07-27
 
 ### Added

@@ -169,6 +169,20 @@ pilot = DocPilot(llm="grok",   model="grok-3-mini")
 pilot = DocPilot(llm="ollama", model="deepseek-r1:7b")
 ```
 
+### temperature (샘플링 온도)
+
+```python
+pilot = DocPilot(llm="ollama", model="qwen2.5:7b", temperature=0)
+```
+
+모든 제공자 공통으로 `temperature`를 넘길 수 있습니다. 미지정 시(기본값 `None`) 제공자/모델 자체의
+기본값을 그대로 씁니다 — 예를 들어 `ollama show <model>`로 보면 모델마다 Modelfile에 다른 기본값이
+박혀 있을 수 있습니다(예: 어떤 모델은 1.0). `generate()`는 섹션 내용을 JSON으로 채우는 구조화된
+출력 작업이라, temperature가 높을수록 같은 입력에도 실행마다 결과가 달라질 수 있고 — 로컬의 작은
+모델일수록 지시(프롬프트의 `[스타일: ...]` 같은 서식 힌트)를 값에 그대로 베끼는 등 JSON 파싱 실패로
+이어지는 경우가 관찰됐습니다. 일관된 결과가 중요하면 `temperature=0`(그리디에 가까운 결정적 출력)으로
+낮추는 걸 권장하되, 완전한 재현성을 보장하지는 않습니다(GPU 병렬 연산 특성상 미세한 차이는 남을 수 있음).
+
 > **`DocPilot(llm=...)`은 `generate()` 파이프라인 전용입니다.**  
 > `build_auto()` · `HwpxDynamicBuilder`는 내부에서 LLM을 독립적으로 호출합니다.  
 > 기본값은 Claude이며, `mapper=` 파라미터로 다른 제공자로 전환할 수 있습니다.  
