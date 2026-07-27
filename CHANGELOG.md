@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-27
+
 ### Added
 - `DocPilot(llm="ollama", num_ctx=...)` — Ollama 요청에 `num_ctx`를 실어 보내고, RAG/content로 조립된 프롬프트가 예상 토큰 기준으로 `num_ctx`를 초과하면 API 호출 전에 `ContextExceededError`로 즉시 차단 (기존엔 조용히 잘리거나 응답이 중간에 끊길 수 있었음)
 - `RagMapper.map()`: `ContextExceededError` 발생 시 `top_k`를 절반씩 줄여 최대 2회 자동 재시도 (Ollama 사전 차단 + Claude/OpenAI/Gemini/Grok의 실제 API 거부 에러 양쪽 모두에 적용)
