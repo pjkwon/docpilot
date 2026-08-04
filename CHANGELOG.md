@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-04
+
 ### Changed
 - Gemini 기본 모델 `gemini-2.0-flash` → `gemini-3.6-flash` — 구 모델은 신규 발급 API 키/프로젝트에서 404(신규 사용자 미제공)로 막힘을 확인
 
