@@ -114,7 +114,7 @@ smart-docgen은 5개 LLM 제공자를 지원합니다. `DocPilot(llm=...)` 또�
 |--------|-----------|-----------|--------------|-------------|
 | Anthropic Claude | `"claude"` | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` | **기본 포함** |
 | OpenAI | `"openai"` | `gpt-4o` | `OPENAI_API_KEY` | `[openai]` |
-| Google Gemini | `"gemini"` | `gemini-2.0-flash` | `GEMINI_API_KEY` | `[gemini]` |
+| Google Gemini | `"gemini"` | `gemini-3.6-flash` | `GEMINI_API_KEY` | `[gemini]` |
 | xAI Grok | `"grok"` | `grok-3` | `XAI_API_KEY` | `[openai]` |
 | Ollama (로컬) | `"ollama"` | `llama3.2` | 불필요 | `[openai]` |
 
@@ -168,6 +168,8 @@ pilot = DocPilot(llm="gemini", model="gemini-1.5-pro")
 pilot = DocPilot(llm="grok",   model="grok-3-mini")
 pilot = DocPilot(llm="ollama", model="deepseek-r1:7b")
 ```
+
+`model=`을 생략하면 `DOCPILOT_MODEL` 환경변수를 씁니다 (`.env`에 `DOCPILOT_MODEL=claude-opus-4-8`처럼 설정). 코드에서 넘긴 `model=` 인자가 있으면 그쪽이 우선합니다.
 
 ### temperature (샘플링 온도)
 

@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Changed
+- Gemini 기본 모델 `gemini-2.0-flash` → `gemini-3.6-flash` — 구 모델은 신규 발급 API 키/프로젝트에서 404(신규 사용자 미제공)로 막힘을 확인
+
+### Fixed
+- `DocPilot()` 직접 호출 시 `DOCPILOT_MODEL` 환경변수가 무시되던 버그 — MCP 서버(`mcp_server.py`) 경로에서만 읽히고 있었음. 이제 `model=` 인자를 생략하면 `DocPilot()`도 `DOCPILOT_MODEL`을 읽음
+- DOCX 템플릿에서 Word가 서식 차이로 `{{key}}`를 여러 run으로 쪼개 저장한 경우, 플레이스홀더 추출 결과에 XML 태그가 섞여 섹션명이 깨지던 버그 — raw XML을 우선 검색하던 로직을 제거하고 항상 태그를 제거한 텍스트에서 추출하도록 변경
+
 ## [0.2.4] - 2026-07-27
 
 ### Added

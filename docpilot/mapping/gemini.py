@@ -9,7 +9,7 @@ from docpilot.mapping.base import BaseLLMMapper, MappingResult, TemplateSection
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gemini-2.0-flash"
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 
 class GeminiMapper(BaseLLMMapper):

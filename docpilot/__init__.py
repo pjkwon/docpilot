@@ -383,14 +383,10 @@ def _extract_placeholders(template_path: Path) -> list[str]:
     if text is None:
         return []
 
+    clean_text = re.sub(r'<[^>]+>', '', text)
     seen: dict[str, None] = {}
-    for match in _PLACEHOLDER_RE.finditer(text):
+    for match in _PLACEHOLDER_RE.finditer(clean_text):
         seen[match.group(1)] = None
-
-    if not seen:
-        clean_text = re.sub(r'<[^>]+>', '', text)
-        for match in _PLACEHOLDER_RE.finditer(clean_text):
-            seen[match.group(1)] = None
 
     return list(seen)
 
@@ -409,8 +405,7 @@ def _extract_placeholder_sections(template_path: Path) -> list:
     if text is None:
         return []
 
-    clean_text = re.sub(r'<[^>]+>', '', text)
-    search_text = text if _PLACEHOLDER_RE.search(text) else clean_text
+    search_text = re.sub(r'<[^>]+>', '', text)
 
     # Collect all keys in first-seen order
     all_keys: list[str] = []
@@ -1051,6 +1046,7 @@ class DocPilot:
             from docpilot.search.embedding import default_embed_fn
             embed_fn = default_embed_fn()  # None when sentence-transformers not installed
         self._embed_fn = embed_fn
+        model = model or os.environ.get("DOCPILOT_MODEL")
         base_mapper = self._build_mapper(self._llm, api_key, model, base_url, num_ctx, temperature)
 
         from docpilot.mapping.rag import RagMapper
