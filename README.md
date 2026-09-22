@@ -49,7 +49,7 @@ pip install "smart-docgen[gemini]"    # Google Gemini
 pip install "smart-docgen[voyage]"    # Voyage AI 임베딩 (한국어 우수)
 pip install "smart-docgen[bge]"       # BGE 로컬 임베딩 (BAAI/bge-m3, 한국어 더 우수하지만 ~2GB)
 pip install "smart-docgen[postgres]"  # PostgreSQL + pgvector (대용량)
-pip install "smart-docgen[mcp]"       # Claude 앱 MCP 서버
+pip install "smart-docgen[mcp]"       # MCP 서버 (Claude 앱 등 MCP 클라이언트)
 pip install "smart-docgen[all]"       # 전체 설치
 ```
 

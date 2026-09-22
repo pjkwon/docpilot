@@ -66,6 +66,7 @@ all       = [
     "voyageai>=0.3",
     "FlagEmbedding>=1.0",
     "psycopg2-binary>=2.9", "pgvector>=0.3",
+    "mcp[cli]>=1.0",
 ]
 dev = ["pytest>=8.0", "pytest-mock>=3.0"]
 
