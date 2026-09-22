@@ -7,6 +7,9 @@ name = "smart-docgen"
 dynamic = ["version"]
 description = "LLM-powered document generation from data sources and templates"
 readme = "README.md"
+authors = [
+    { name = "WynterKwon", email = "gomi6864@gmail.com" }
+]
 license = { text = "MIT" }
 requires-python = ">=3.10"
 keywords = ["llm", "document", "hwpx", "docx", "pdf", "rag", "template"]
