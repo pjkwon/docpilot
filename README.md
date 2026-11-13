@@ -282,6 +282,18 @@ result = DocPilot.suggest_extras("./data")
 
 섹션 이름은 한국어·영어 모두 사용 가능합니다.
 
+### 템플릿의 플레이스홀더 확인
+
+LLM 호출 없이 템플릿에 어떤 키가 있는지 확인할 수 있습니다. 파일 경로와 내장·저장 템플릿 이름을 모두 받습니다.
+
+```python
+from docpilot import extract_placeholders, describe_template
+
+extract_placeholders("report")              # ['보고서 제목', '작성일: YYYY년 MM월 DD일', ...] — 원래 키 이름 그대로
+extract_placeholders("./my_template.hwpx")
+describe_template("report")                 # 목록 묶음·선택 여부·규칙·스타일까지 반영된 섹션 정의 + 채우기 예시
+```
+
 ### 스타일 인식 생성 (HWPX·DOCX)
 
 HWPX 또는 DOCX 템플릿을 사용하면 `{{플레이스홀더}}`가 위치한 문단의 서식 정보를 자동으로 분석해 LLM 프롬프트에 포함합니다.
@@ -1246,7 +1258,7 @@ report 템플릿에 어떤 섹션이 있는지 보여줘.
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
-| `ANTHROPIC_API_KEY` | — | Claude API 키 (필수) |
+| `ANTHROPIC_API_KEY` | — | Claude API 키 — `DOCPILOT_LLM=claude`이고 LLM을 쓰는 도구(`generate_template` LLM 보조)에만 필요. 다른 제공자는 `OPENAI_API_KEY` / `GEMINI_API_KEY` / `XAI_API_KEY` |
 | `DOCPILOT_LLM` | `claude` | LLM 제공자 (`claude` / `openai` / `gemini` / `grok` / `ollama`) |
 | `DOCPILOT_MODEL` | 제공자 기본 | 특정 모델 지정 (예: `claude-opus-4-8`) |
 | `DOCPILOT_DATABASE_URL` | `~/docpilot.db` | DB 연결 문자열 (절대 경로 권장) |
