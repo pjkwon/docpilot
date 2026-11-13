@@ -88,9 +88,10 @@ def search(
     fallback: bool = True,
 ) -> list[TemplateRecord]:
     """
-    Hybrid template search (vector + morpheme RRF).
+    Hybrid template search (vector + keyword RRF).
 
-    Falls back to FTS-only when embed_fn is None.
+    Keyword side: morpheme FTS5 on SQLite, name/description ILIKE on PostgreSQL.
+    Falls back to keyword-only when embed_fn is None.
     fallback=False returns [] when no search results match (skips recency fallback).
     Returns detached TemplateRecord instances ordered by relevance.
     """
@@ -99,10 +100,12 @@ def search(
 
     if client.is_sqlite():
         vec_ids = _vec_search(query, embed_fn, top_k * 2) if embed_fn else []
-        fts_ids = _fts_search(query, top_k * 2)
-        merged = _rrf_merge(vec_ids, fts_ids, top_k)
+        keyword_ids = _fts_search(query, top_k * 2)
     else:
-        merged = []  # PostgreSQL path: fall through to recency fallback
+        # PostgreSQL엔 형태소 FTS 인덱스가 없어 이름·설명 부분 일치를 키워드 쪽 결과로 쓴다
+        vec_ids = _pg_vec_search(query, embed_fn, top_k * 2) if embed_fn else []
+        keyword_ids = _pg_keyword_search(query, top_k * 2)
+    merged = _rrf_merge(vec_ids, keyword_ids, top_k)
 
     if merged:
         id_to_rank = {tid: rank for rank, tid in enumerate(merged)}
@@ -376,6 +379,41 @@ def _vec_search(query: str, embed_fn: EmbedFn, top_k: int) -> list[int]:
     with client.session() as db:
         rows = db.execute(sql, {"vec": sqlite_vec.serialize_float32(vec), "top_k": top_k}).fetchall()
     return [row.template_id for row in rows]
+
+
+def _pg_vec_search(query: str, embed_fn: EmbedFn, top_k: int) -> list[int]:
+    try:
+        vec = embed_fn(query)
+    except Exception:
+        return []
+
+    sql = text("""
+        SELECT id
+        FROM template_records
+        WHERE embedding IS NOT NULL
+        ORDER BY embedding <=> CAST(:vec AS vector)
+        LIMIT :top_k
+    """)
+    with client.session() as db:
+        rows = db.execute(sql, {"vec": str(list(vec)), "top_k": top_k}).fetchall()
+    return [row.id for row in rows]
+
+
+def _pg_keyword_search(query: str, top_k: int) -> list[int]:
+    escaped = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
+    with client.session() as db:
+        rows = (
+            db.query(TemplateRecord.id)
+            .filter(
+                TemplateRecord.name.ilike(pattern, escape="\\")
+                | TemplateRecord.description.ilike(pattern, escape="\\")
+            )
+            .order_by(TemplateRecord.created_at.desc())
+            .limit(top_k)
+            .all()
+        )
+    return [row.id for row in rows]
 
 
 def _fts_search(query: str, top_k: int) -> list[int]:

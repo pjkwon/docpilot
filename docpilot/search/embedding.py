@@ -113,11 +113,11 @@ def _pg_search(
             d.source      AS source,
             c.content     AS content,
             d.metadata    AS metadata,
-            1 - (c.embedding <=> :vec::vector) AS score
+            1 - (c.embedding <=> CAST(:vec AS vector)) AS score
         FROM chunks c
         JOIN documents d ON d.id = c.document_id
         {where_clause}
-        ORDER BY c.embedding <=> :vec::vector
+        ORDER BY c.embedding <=> CAST(:vec AS vector)
         LIMIT :top_k
     """)
 

@@ -146,9 +146,13 @@ def create_tables(embedding_dim: int | None = None) -> None:
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         with engine.begin() as conn:
+            dim = embedding_dim or EMBEDDING_DIM
             conn.execute(text(
-                f"ALTER TABLE chunks "
-                f"ADD COLUMN IF NOT EXISTS embedding vector({embedding_dim or EMBEDDING_DIM})"
+                f"ALTER TABLE chunks ADD COLUMN IF NOT EXISTS embedding vector({dim})"
+            ))
+            # 템플릿 설명 임베딩 (template_store가 저장·검색) — 청크와 같은 embed_fn이라 차원도 같다
+            conn.execute(text(
+                f"ALTER TABLE template_records ADD COLUMN IF NOT EXISTS embedding vector({dim})"
             ))
             conn.execute(text(
                 "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64)"
