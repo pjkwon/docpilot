@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Generator
 from contextlib import contextmanager
 
@@ -51,12 +52,36 @@ def init(database_url: str | None = None) -> None:
     _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False, expire_on_commit=False)
 
 
-def create_tables() -> None:
-    """Create all tables. Sets up sqlite-vec virtual table or pgvector DDL."""
+_VEC_DIM_RE = re.compile(r"float\[(\d+)\]")
+
+
+def create_tables(embedding_dim: int | None = None) -> None:
+    """Create all tables. Sets up sqlite-vec virtual table or pgvector DDL.
+
+    embedding_dim: 벡터 테이블 차원 — 인덱싱·검색에 쓰는 embed_fn의 출력 차원과 같아야 한다.
+        None이면 SQLite는 기존 벡터 테이블의 차원을 그대로 쓰고, 새 DB면 EMBEDDING_DIM으로 만든다.
+        값을 주면 새 DB는 그 차원으로 만들고, 기존 SQLite DB의 차원과 다르면 SearchError를 던진다.
+        PostgreSQL은 기존 embedding 컬럼을 바꾸지 않는다 — 차원이 다르면 첫 삽입 때 pgvector가
+        에러를 낸다.
+    """
     engine = _get_engine()
     Base.metadata.create_all(engine)
 
     if _backend == "sqlite":
+        with engine.begin() as conn:
+            existing_dim = _sqlite_vec_dim(conn, "vec_chunks")
+        if embedding_dim is not None and existing_dim is not None and existing_dim != embedding_dim:
+            raise SearchError(
+                f"임베딩 차원 불일치: DB의 벡터 테이블은 {existing_dim}차원인데 "
+                f"현재 임베딩 함수는 {embedding_dim}차원입니다",
+                detail=(
+                    "임베딩 모델이 바뀌면 기존 벡터와 비교할 수 없습니다. 다른 DB 파일을 지정하거나"
+                    "(DocPilot(database_url=...) 또는 DOCPILOT_DATABASE_URL) 기존 DB를 지우고 "
+                    "다시 인덱싱하세요."
+                ),
+            )
+        dim = embedding_dim or existing_dim or EMBEDDING_DIM
+
         with engine.begin() as conn:
             existing = {
                 row[1]
@@ -73,7 +98,7 @@ def create_tables() -> None:
         with engine.begin() as conn:
             conn.execute(text(
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks "
-                f"USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[{EMBEDDING_DIM}])"
+                f"USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[{dim}])"
             ))
             # vec_chunks는 가상 테이블이라 FK CASCADE가 적용되지 않음.
             # chunks 행 삭제 시 대응하는 vec_chunks 행을 트리거로 제거.
@@ -97,7 +122,7 @@ def create_tables() -> None:
             """))
             conn.execute(text(
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_templates "
-                f"USING vec0(template_id INTEGER PRIMARY KEY, embedding float[{EMBEDDING_DIM}])"
+                f"USING vec0(template_id INTEGER PRIMARY KEY, embedding float[{dim}])"
             ))
             conn.execute(text(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS fts_templates "
@@ -123,7 +148,7 @@ def create_tables() -> None:
         with engine.begin() as conn:
             conn.execute(text(
                 f"ALTER TABLE chunks "
-                f"ADD COLUMN IF NOT EXISTS embedding vector({EMBEDDING_DIM})"
+                f"ADD COLUMN IF NOT EXISTS embedding vector({embedding_dim or EMBEDDING_DIM})"
             ))
             conn.execute(text(
                 "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64)"
@@ -134,6 +159,17 @@ def create_tables() -> None:
             conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_documents_collection ON documents(collection)"
             ))
+
+
+def _sqlite_vec_dim(conn, table: str) -> int | None:
+    """sqlite-vec 가상 테이블의 벡터 차원 — 테이블이 없으면 None."""
+    row = conn.execute(
+        text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = :name"), {"name": table}
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    match = _VEC_DIM_RE.search(row[0])
+    return int(match.group(1)) if match else None
 
 
 def is_sqlite() -> bool:

@@ -14,7 +14,9 @@ from sqlalchemy import (
 from sqlalchemy import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-EMBEDDING_DIM = 768  # intfloat/multilingual-e5-base (default); change if using a different model
+# 벡터 테이블의 기본 차원 (기본 임베딩 intfloat/multilingual-e5-base). DocPilot은 embed_fn의 실제
+# 차원으로 테이블을 만들므로(client.create_tables(embedding_dim=...)) 모델을 바꿔도 수정할 필요 없다.
+EMBEDDING_DIM = 768
 
 
 class Base(DeclarativeBase):
@@ -67,7 +69,7 @@ class Chunk(Base):
 
     # Embeddings are stored separately:
     # - SQLite: vec_chunks virtual table (sqlite-vec)
-    # - PostgreSQL: embedding vector(768) column (pgvector, added via DDL)
+    # - PostgreSQL: embedding vector(N) column (pgvector, added via DDL)
 
 
 class TemplateRecord(Base):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,16 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 _pilot = None
+
+
+@functools.cache
+def _get_embed_fn():
+    """DOCPILOT_EMBED로 고른 embed_fn을 프로세스당 한 번만 만든다.
+
+    retrieve_context와 generate_template(_get_pilot)이 같은 함수를 써야 인덱싱·검색 모델이 일치하고,
+    도구 호출마다 임베딩 모델을 다시 로드하지 않는다.
+    """
+    return _resolve_embed_fn()
 
 
 def _resolve_embed_fn():
@@ -24,13 +35,13 @@ def _resolve_embed_fn():
       sentence            → sentence_embed_fn()
       sentence:intfloat/multilingual-e5-large → sentence_embed_fn(model=...)
     """
+    from docpilot.search.embedding import (
+        bge_embed_fn, default_embed_fn, openai_embed_fn, voyage_embed_fn, sentence_embed_fn,
+    )
+
     raw = os.environ.get("DOCPILOT_EMBED", "").strip()
     if not raw:
-        return None  # DocPilot.__init__ will call default_embed_fn()
-
-    from docpilot.search.embedding import (
-        bge_embed_fn, openai_embed_fn, voyage_embed_fn, sentence_embed_fn,
-    )
+        return default_embed_fn()
 
     provider, _, option = raw.partition(":")
     provider = provider.lower()
@@ -52,7 +63,7 @@ def _resolve_embed_fn():
                 "유효한 값: bge, openai, voyage, sentence (콜론으로 옵션 구분 가능)",
                 stacklevel=2,
             )
-            return None
+            return default_embed_fn()
 
 
 def _get_pilot():
@@ -62,7 +73,7 @@ def _get_pilot():
         # LLM 제공자(DOCPILOT_LLM)·모델(DOCPILOT_MODEL)·DB(DOCPILOT_DATABASE_URL)·제공자별 API 키는
         # DocPilot과 각 매퍼가 환경변수에서 직접 읽는다. 여기서 키를 따로 넘기면 제공자와 무관하게
         # 한 가지 키가 강제되므로(예: openai인데 ANTHROPIC_API_KEY 전달) 넘기지 않는다.
-        _pilot = DocPilot(embed_fn=_resolve_embed_fn())
+        _pilot = DocPilot(embed_fn=_get_embed_fn())
     return _pilot
 
 
@@ -252,6 +263,7 @@ def retrieve_context(
             reindex=reindex,
             top_k=top_k,
             collection=collection,
+            embed_fn=_get_embed_fn(),
         )
     except DocPilotError as e:
         return f"컨텍스트 검색 실패: {e}"

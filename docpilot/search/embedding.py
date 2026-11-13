@@ -12,6 +12,25 @@ from docpilot.search.models import SearchFilter, SearchResult
 EmbedFn = Callable[[str], list[float]]
 
 
+def embedding_dim(embed_fn: EmbedFn | None) -> int | None:
+    """embed_fn의 출력 차원. 벡터 테이블을 이 차원으로 만들어야 인덱싱·검색이 동작한다.
+
+    내장 팩토리가 붙여둔 ``embed_fn.dim``이 있으면 호출 없이 그 값을 쓰고, 없으면(사용자 정의
+    함수, API 기반 임베딩 등) 짧은 문자열로 한 번 호출해 측정한다 — API 임베딩이면 이 한 번의
+    호출이 과금된다. 호출을 피하려면 함수에 ``dim`` 속성을 직접 지정하면 된다.
+    embed_fn이 None이면 None.
+    """
+    if embed_fn is None:
+        return None
+    dim = getattr(embed_fn, "dim", None)
+    if dim is not None:
+        return int(dim)
+    try:
+        return len(embed_fn("dimension probe"))
+    except Exception as e:
+        raise SearchError("임베딩 차원 확인을 위한 embed_fn 호출 실패", detail=str(e)) from e
+
+
 def search(
     query: str,
     embed_fn: EmbedFn,
@@ -207,6 +226,7 @@ def bge_embed_fn(
 
 
 _DEFAULT_MODEL = "intfloat/multilingual-e5-base"
+_DEFAULT_MODEL_DIM = 768
 
 
 def default_embed_fn() -> "EmbedFn | None":
@@ -239,6 +259,8 @@ def default_embed_fn() -> "EmbedFn | None":
             return [v.tolist() for v in result]
         return result.tolist()
 
+    # 모델은 지연 로드라 차원을 고정값으로 붙여둔다 — embedding_dim()이 모델을 로드하지 않도록
+    _embed.dim = _DEFAULT_MODEL_DIM
     return _embed
 
 
@@ -265,4 +287,5 @@ def sentence_embed_fn(
             return [v.tolist() for v in result]
         return result.tolist()
 
+    _embed.dim = _model.get_sentence_embedding_dimension()  # 알 수 없으면 None → embedding_dim()이 측정
     return _embed

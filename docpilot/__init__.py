@@ -965,8 +965,9 @@ def retrieve_context(
         embed_fn = default_embed_fn()
 
     from docpilot.db import client as db_client
+    from docpilot.search.embedding import embedding_dim
     db_client.init(database_url)
-    db_client.create_tables()
+    db_client.create_tables(embedding_dim=embedding_dim(embed_fn))
 
     from docpilot.db import indexer
     doc_ids = indexer.index_folder(
@@ -1063,8 +1064,10 @@ class DocPilot:
         self._rag_mapper_instance = None
 
         from docpilot.db import client as db_client
+        from docpilot.search.embedding import embedding_dim
         db_client.init(database_url)
-        db_client.create_tables()
+        # 벡터 테이블을 embed_fn의 실제 차원으로 만든다 (기존 DB와 다르면 SearchError)
+        db_client.create_tables(embedding_dim=embedding_dim(embed_fn))
 
     @property
     def _mapper(self):

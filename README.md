@@ -960,7 +960,9 @@ pilot = DocPilot(llm="claude", embed_fn=embed_fn)
 
 > **모델 캐시**: 로컬 모델은 첫 실행 시 HuggingFace에서 자동 다운로드되어 `~/.cache/huggingface/`에 저장됩니다. 이후 실행부터는 캐시에서 불러옵니다.
 
-> **임베딩 차원**: 기본 임베딩 모델은 `default_embed_fn()` (multilingual-e5-base, **768차원**, `EMBEDDING_DIM` 기본값도 768). `bge_embed_fn()`으로 바꾸면 1024차원입니다. 임베딩 제공자를 변경하는 경우 `EMBEDDING_DIM`과 vec_chunks 테이블 차원이 일치해야 합니다. 기존 DB가 있다면 삭제 후 재생성하거나 `vec_chunks`를 DROP 후 `client.create_tables()`로 재생성하세요.
+> **임베딩 차원**: 벡터 테이블은 `DocPilot`에 넘긴 `embed_fn`의 실제 출력 차원으로 만들어집니다(기본 `default_embed_fn()`은 768차원, `bge_embed_fn()`은 1024차원). `default_embed_fn()`/`sentence_embed_fn()`은 차원을 `dim` 속성으로 갖고 있고, 그 밖의 함수(BGE·OpenAI·Voyage·사용자 정의)는 `DocPilot()` 생성 시 짧은 문자열로 한 번 호출해 차원을 측정합니다. API 임베딩이면 이 한 번의 호출이 과금되므로, 피하려면 함수에 `dim` 속성을 지정하세요(예: `embed_fn.dim = 1536`).
+>
+> 이미 만들어진 DB와 차원이 다른 모델을 연결하면 `DocPilot()` 생성 시 `SearchError`("임베딩 차원 불일치")가 납니다. 모델을 바꿀 때는 다른 DB 파일을 지정(`database_url=` / `DOCPILOT_DATABASE_URL`)하거나 기존 DB를 지우고 다시 인덱싱하세요. PostgreSQL은 기존 `embedding` 컬럼을 바꾸지 않으며, 차원이 다르면 첫 인덱싱 때 pgvector가 에러를 냅니다.
 
 > **인덱싱과 검색은 반드시 같은 `embed_fn`을 써야 합니다.** 인덱싱 때 넣은 벡터와 검색 때 만든 쿼리 벡터가 다른 모델에서 나온 거라면 코사인 유사도 비교 자체가 무의미해집니다. `DocPilot` 인스턴스 하나로 인덱싱·검색을 모두 하면 `self._embed_fn`이 그대로 재사용되니 자동으로 보장되지만, 인덱싱용/검색용 `DocPilot`을 따로 만들거나 `indexer.index_folder()` / `embedding.search()` 같은 저수준 함수를 직접 호출한다면 같은 `embed_fn`을 넘기고 있는지 직접 확인하세요.
 >
@@ -1262,6 +1264,8 @@ report 템플릿에 어떤 섹션이 있는지 보여줘.
 | `voyage` | `voyage-3` | `[voyage]` | `VOYAGE_API_KEY` 필요 |
 | `sentence` | `paraphrase-multilingual-MiniLM-L12-v2` | core (기본 설치 포함) | (미설정)과 기본 모델이 다름 |
 | `sentence:intfloat/multilingual-e5-large` | multilingual-e5-large | core (기본 설치 포함) | 더 높은 품질 |
+
+선택한 임베딩 모델은 서버 프로세스당 한 번만 로드되며 `retrieve_context`와 `generate_template`이 같이 사용합니다. 기본 DB를 기본 모델(768차원)로 이미 써왔다면, 차원이 다른 모델(`bge`, `openai` 등)로 바꿀 때 `DOCPILOT_DATABASE_URL`도 새 파일로 지정하세요 — 그대로 두면 "임베딩 차원 불일치" 에러가 납니다.
 
 ## 비용 추정
 

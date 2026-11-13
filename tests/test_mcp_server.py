@@ -280,6 +280,30 @@ def test_get_pilot_uses_provider_specific_api_key(tmp_path, monkeypatch):
     pilot = mcp_server._get_pilot()
 
     assert pilot._mapper._api_key == "sk-openai-right"
+    # retrieve_context와 같은 임베딩 함수를 써야 인덱싱·검색 모델이 일치한다
+    assert pilot._embed_fn is mcp_server._get_embed_fn()
+
+
+@requires_mcp
+def test_retrieve_context_uses_configured_embed_fn(monkeypatch):
+    """DOCPILOT_EMBED로 고른 임베딩 함수가 retrieve_context 검색에도 전달되어야 합니다."""
+    from docpilot import RetrievedContext, mcp_server
+
+    def configured_embed(text):
+        return [0.1] * 768
+
+    captured = {}
+
+    def fake_retrieve_context(**kwargs):
+        captured.update(kwargs)
+        return RetrievedContext(template="t.hwpx", instructions="", sections=[], context="ctx")
+
+    monkeypatch.setattr(mcp_server, "_get_embed_fn", lambda: configured_embed)
+    monkeypatch.setattr("docpilot.retrieve_context", fake_retrieve_context)
+
+    mcp_server.retrieve_context(data_folder="data", template="report")
+
+    assert captured["embed_fn"] is configured_embed
 
 
 # ---------------------------------------------------------------------------
