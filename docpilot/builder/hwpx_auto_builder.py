@@ -291,7 +291,7 @@ def _infer_structure_hint(hwpx_path: Path, instructions: str | None, mapper: Bas
     """
     try:
         from docpilot.ingestion import hwpx as hwpx_ing
-        from docpilot import _infer_sections_from_content
+        from docpilot.template_resolver import _infer_sections_from_content
 
         doc = hwpx_ing.ingest(hwpx_path)
         if not doc.content.strip():
