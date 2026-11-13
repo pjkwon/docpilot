@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -48,7 +49,10 @@ class TestPdfIngestion:
         path = tmp_path / "sample.pdf"
         path.write_bytes(b"%PDF-1.4 fake")
 
-        with patch("pdfplumber.open", return_value=mock_pdf):
+        # [pdf] extra 미설치 환경에서도 돌도록 pdfplumber 자체를 가짜 모듈로 주입 (ingest가 지연 import함)
+        fake_pdfplumber = MagicMock()
+        fake_pdfplumber.open.return_value = mock_pdf
+        with patch.dict(sys.modules, {"pdfplumber": fake_pdfplumber}):
             doc = pdf_ing.ingest(path)
 
         assert doc.content == "A" * 200

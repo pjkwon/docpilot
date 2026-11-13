@@ -91,6 +91,8 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+# scripts/test_*.py는 수동 실행용 스크립트(일부는 import 시점에 sys.exit 호출)라 수집 대상에서 제외
+testpaths = ["tests"]
 markers = [
     "slow: tests that load real models or index real files (deselect with -m 'not slow')",
 ]

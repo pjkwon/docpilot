@@ -8,6 +8,7 @@ generate_template 관련 테스트만 실제 LLM 호출을 포함합니다 (ANTH
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import zipfile
@@ -16,6 +17,13 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import requires_llm
+
+# docpilot.mcp_server는 모듈 최상단에서 FastMCP를 import하므로 [mcp] extra가 없으면 import 자체가 실패한다.
+# 모듈 전체가 아니라 mcp_server를 쓰는 테스트만 skip — TC-05는 mcp 없이도 돈다.
+requires_mcp = pytest.mark.skipif(
+    importlib.util.find_spec("mcp") is None,
+    reason='mcp 미설치 — pip install "smart-docgen[mcp]"',
+)
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +103,7 @@ def mcp_pilot(tmp_path: Path, monkeypatch):
 # TC-01: describe_template — 템플릿 구조 확인 (LLM/RAG 불필요)
 # ---------------------------------------------------------------------------
 
+@requires_mcp
 def test_tc01a_describe_builtin_template():
     """describe_template('report')가 섹션 목록과 fill_template용 example dict를 반환해야 합니다."""
     from docpilot.mcp_server import describe_template
@@ -105,6 +114,7 @@ def test_tc01a_describe_builtin_template():
     assert "[fill_template()의 sections 인자에 그대로 채워 넣을 예시]" in result
 
 
+@requires_mcp
 def test_tc01b_describe_placeholder_template(placeholder_template):
     """{{개요}} 등 실제 placeholder 이름이 섹션 키로 정확히 노출되어야 합니다."""
     from docpilot.mcp_server import describe_template
@@ -119,6 +129,7 @@ def test_tc01b_describe_placeholder_template(placeholder_template):
 # TC-02: fill_template — 작성된 섹션 내용을 기계적으로 채우기 (LLM/RAG 불필요)
 # ---------------------------------------------------------------------------
 
+@requires_mcp
 def test_tc02a_fill_placeholder_template(placeholder_template, tmp_path):
     """{{placeholder}} 있는 HWPX 템플릿 → sections dict로 치환, 남는 placeholder 없어야 함."""
     from docpilot.mcp_server import fill_template
@@ -142,6 +153,7 @@ def test_tc02a_fill_placeholder_template(placeholder_template, tmp_path):
     assert "{{" not in content, "placeholder가 치환되지 않고 남아있습니다"
 
 
+@requires_mcp
 def test_tc02b_fill_template_missing_required_key(placeholder_template, tmp_path):
     """필수 섹션 키가 빠지면 문서를 만들지 않고 오류를 반환해야 합니다."""
     from docpilot.mcp_server import fill_template
@@ -158,6 +170,7 @@ def test_tc02b_fill_template_missing_required_key(placeholder_template, tmp_path
     assert not output.exists()
 
 
+@requires_mcp
 def test_tc02c_fill_template_unknown_key(placeholder_template, tmp_path):
     """템플릿에 없는 키(오탈자)가 섞여 있으면 오류를 반환해야 합니다."""
     from docpilot.mcp_server import fill_template
@@ -178,6 +191,7 @@ def test_tc02c_fill_template_unknown_key(placeholder_template, tmp_path):
 # TC-03: 템플릿 자동 생성 (generate_template) → describe/fill로 재사용
 # ---------------------------------------------------------------------------
 
+@requires_mcp
 @requires_llm
 def test_tc03a_generate_template_created(reference_template, samples_folder, tmp_path, mcp_pilot):
     """generate_template 호출 시 템플릿 파일이 생성되어야 합니다."""
@@ -197,6 +211,7 @@ def test_tc03a_generate_template_created(reference_template, samples_folder, tmp
     assert "템플릿 생성 완료" in result
 
 
+@requires_mcp
 @requires_llm
 def test_tc03b_generated_template_reusable(reference_template, samples_folder, tmp_path, mcp_pilot):
     """generate_template으로 만든 템플릿을 describe_template → fill_template로 재사용할 수 있어야 합니다."""
@@ -227,6 +242,7 @@ def test_tc03b_generated_template_reusable(reference_template, samples_folder, t
 # TC-04: 출력 파일 식별성 — 같은 템플릿·섹션, 다른 output 경로 (LLM/RAG 불필요)
 # ---------------------------------------------------------------------------
 
+@requires_mcp
 def test_tc04_output_files_distinct(placeholder_template, tmp_path):
     """다른 output 경로로 두 번 호출하면 두 파일 모두 존재하고 서로 독립적이어야 합니다."""
     from docpilot.mcp_server import fill_template
@@ -253,6 +269,10 @@ def test_tc05_index_auto_reindex_on_change(tmp_path):
     from docpilot.db import indexer
     from docpilot.db.schema import Document
     from docpilot.db import client
+
+    # 앞선 테스트가 남긴 전역 DB 연결에 의존하지 않도록 이 테스트 전용 DB로 초기화
+    client.init(f"sqlite:///{tmp_path / 'tc05.db'}")
+    client.create_tables()
 
     data_folder = tmp_path / "data"
     data_folder.mkdir()

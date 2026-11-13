@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +14,29 @@ from tests.mocks.llm_mock import MockMapper
 
 SECTIONS = [TemplateSection("서론"), TemplateSection("결론")]
 CONTENT = "2025년 사업 계획 내용입니다."
+
+
+# 매퍼들은 SDK를 메서드 안에서 지연 import하므로, sys.modules에 가짜 모듈을 넣으면
+# [openai]/[gemini] extras가 설치되지 않은 환경에서도 매퍼 로직을 테스트할 수 있다.
+@contextmanager
+def _fake_openai():
+    """가짜 openai 모듈을 주입하고 OpenAI 클래스 mock을 넘긴다."""
+    fake = MagicMock()
+    with patch.dict(sys.modules, {"openai": fake}):
+        yield fake.OpenAI
+
+
+@contextmanager
+def _fake_genai(fake_genai: MagicMock):
+    """google과 google.genai를 함께 가짜로 바꾼다.
+
+    google.genai만 바꾸면, 실제 SDK가 이미 import된 프로세스에서는 `from google import genai`가
+    google 패키지의 genai 속성(실제 모듈)을 먼저 집어 mock이 무시된다.
+    """
+    fake_google = MagicMock()
+    fake_google.genai = fake_genai
+    with patch.dict(sys.modules, {"google": fake_google, "google.genai": fake_genai}):
+        yield fake_genai
 
 
 class TestMockMapper:
@@ -233,7 +258,7 @@ class TestGeminiMapper:
         mock_genai = MagicMock()
         mock_genai.Client.return_value.models.generate_content.return_value = mock_response
 
-        with patch.dict(sys.modules, {"google.genai": mock_genai}):
+        with _fake_genai(mock_genai):
             mapper = GeminiMapper(api_key="test-key")
             result = mapper.map(CONTENT, SECTIONS)
 
@@ -260,7 +285,7 @@ class TestGeminiMapper:
         mock_genai = MagicMock()
         mock_genai.Client.return_value.models.generate_content.return_value = mock_response
 
-        with patch.dict(sys.modules, {"google.genai": mock_genai}):
+        with _fake_genai(mock_genai):
             mapper = GeminiMapper(api_key="test-key")
             with pytest.raises(MappingError, match="max_tokens"):
                 mapper.map(CONTENT, SECTIONS)
@@ -288,7 +313,7 @@ class TestGeminiMapper:
         mock_genai = MagicMock()
         mock_genai.Client.return_value.models.generate_content.return_value = mock_response
 
-        with patch.dict(sys.modules, {"google.genai": mock_genai}):
+        with _fake_genai(mock_genai):
             mapper = GeminiMapper(api_key="test-key")
             mapper.map(CONTENT, SECTIONS, "전문 용어는 한국어로 병기하세요")
 
@@ -335,7 +360,7 @@ class TestOpenAICompatMapper:
         mock_response.usage.prompt_tokens = 60
         mock_response.usage.completion_tokens = 30
 
-        with patch("openai.OpenAI") as MockClient:
+        with _fake_openai() as MockClient:
             MockClient.return_value.chat.completions.create.return_value = mock_response
             mapper = OllamaMapper(model="llama3.2")
             result = mapper.map(CONTENT, SECTIONS)
@@ -354,7 +379,7 @@ class TestOpenAICompatMapper:
         mock_response.usage.prompt_tokens = 10
         mock_response.usage.completion_tokens = 5
 
-        with patch("openai.OpenAI") as MockClient:
+        with _fake_openai() as MockClient:
             MockClient.return_value.chat.completions.create.return_value = mock_response
             mapper = OllamaMapper(model="llama3.2")
             mapper.map(CONTENT, SECTIONS, "전문 용어는 한국어로 병기하세요")
@@ -374,7 +399,7 @@ class TestOpenAIMapper:
         mock_response.usage.prompt_tokens = 60
         mock_response.usage.completion_tokens = 30
 
-        with patch("openai.OpenAI") as MockClient:
+        with _fake_openai() as MockClient:
             MockClient.return_value.chat.completions.create.return_value = mock_response
             mapper = OpenAIMapper(api_key="test-key")
             result = mapper.map(CONTENT, SECTIONS)
@@ -392,7 +417,7 @@ class TestOpenAIMapper:
         mock_response.usage.prompt_tokens = 60
         mock_response.usage.completion_tokens = 30
 
-        with patch("openai.OpenAI") as MockClient:
+        with _fake_openai() as MockClient:
             MockClient.return_value.chat.completions.create.return_value = mock_response
             mapper = OpenAIMapper(api_key="test-key")
             with pytest.raises(MappingError, match="max_tokens"):
@@ -404,7 +429,7 @@ class TestOpenAIMapper:
         mock_response = MagicMock()
         mock_response.choices[0].message.content = "1"
 
-        with patch("openai.OpenAI") as MockClient:
+        with _fake_openai() as MockClient:
             MockClient.return_value.chat.completions.create.return_value = mock_response
             mapper = OpenAIMapper(api_key="test-key")
             result = mapper.complete("프롬프트")
@@ -429,7 +454,7 @@ class TestOpenAIMapper:
         mock_response.usage.prompt_tokens = 10
         mock_response.usage.completion_tokens = 5
 
-        with patch("openai.OpenAI") as MockClient:
+        with _fake_openai() as MockClient:
             MockClient.return_value.chat.completions.create.return_value = mock_response
             mapper = OpenAIMapper(api_key="test-key")
             mapper.map(CONTENT, SECTIONS, "전문 용어는 한국어로 병기하세요")
