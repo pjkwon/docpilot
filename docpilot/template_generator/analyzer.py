@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -10,6 +11,27 @@ from docpilot.template_generator.extractor import ParagraphInfo, extract
 
 # Default threshold: at least 70% of sample documents must share a section
 DEFAULT_CONFIDENCE_THRESHOLD = 0.7
+
+# 문서마다 표기가 다른 번호 매김 접두어(제N장/1./가./①/Ⅰ. 등)를 제목에서 제거해
+# 같은 섹션인데 번호 스타일만 달라서 다른 heading으로 잡히는 것을 막는다.
+_NUMBERING_KO = "가나다라마바사아자차카타파하"
+_NUMBERING_RE = re.compile(
+    r"^\s*(?:"
+    r"제\s*\d+\s*(?:장|절|조|항|관|과)\s*[.):]?|"
+    r"\d+[.)](?=\s|$)|"
+    r"\(\d+\)|"
+    r"[①-⑳]|"
+    r"[Ⅰ-Ⅻ][.)]?|"
+    r"[IVXLCDM]+[.)](?=\s|$)|"
+    rf"[{_NUMBERING_KO}][.)](?=\s|$)|"
+    rf"\([{_NUMBERING_KO}]\)"
+    r")\s*"
+)
+
+
+def _normalize_heading(text: str) -> str:
+    normalized = _NUMBERING_RE.sub("", text).strip()
+    return normalized or text
 
 
 @dataclass
@@ -43,7 +65,9 @@ def analyze(
     for path in samples:
         path = Path(path)
         paragraphs = extractor(path)
-        headings = [p.text for p in paragraphs if p.is_heading_candidate]
+        headings = [
+            _normalize_heading(p.text) for p in paragraphs if p.is_heading_candidate
+        ]
         per_doc[str(path)] = headings
 
     total = len(per_doc)

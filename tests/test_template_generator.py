@@ -7,7 +7,7 @@ import pytest
 
 from docpilot.exceptions import TemplateError
 from docpilot.template_generator.extractor import ParagraphInfo, extract
-from docpilot.template_generator.analyzer import analyze, AnalysisResult
+from docpilot.template_generator.analyzer import analyze, AnalysisResult, _normalize_heading
 from docpilot.template_generator.generator import generate
 
 
@@ -33,6 +33,32 @@ class TestExtractor:
             extract(bad)
 
 
+class TestNormalizeHeading:
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("1. 개요", "개요"),
+            ("1) 개요", "개요"),
+            ("가. 개요", "개요"),
+            ("(가) 개요", "개요"),
+            ("(1) 개요", "개요"),
+            ("① 개요", "개요"),
+            ("Ⅰ. 개요", "개요"),
+            ("I. 개요", "개요"),
+            ("제1장 개요", "개요"),
+            ("제1장. 개요", "개요"),
+            ("제2절 세부사항", "세부사항"),
+            ("개요", "개요"),
+        ],
+    )
+    def test_strips_numbering_prefix(self, raw, expected):
+        assert _normalize_heading(raw) == expected
+
+    def test_numbering_only_falls_back_to_original(self):
+        # 접두어만 제거하면 빈 문자열이 되는 경우 원본 텍스트를 유지한다
+        assert _normalize_heading("1.") == "1."
+
+
 class TestAnalyzer:
     def test_single_document(self, sample_hwpx: Path):
         result = analyze([sample_hwpx], confidence_threshold=0.5)
@@ -45,6 +71,24 @@ class TestAnalyzer:
         result = analyze([doc1, doc2], confidence_threshold=0.5)
         assert len(result.common_sections) > 0
         assert result.confidence > 0
+
+    def test_common_sections_match_despite_different_numbering(self, make_hwpx):
+        def heading_xml(numbered_text: str) -> bytes:
+            return (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<hml xmlns:hp="http://www.hancom.co.kr/hwpml/2012/paragraph">'
+                "<hp:body><hp:sec>"
+                '<hp:p><hp:pPr><hp:rPr><hp:sz hp:val="1800"/><hp:b hp:val="true"/>'
+                f"</hp:rPr></hp:pPr><hp:t>{numbered_text}</hp:t></hp:p>"
+                "</hp:sec></hp:body></hml>"
+            ).encode("utf-8")
+
+        doc1 = make_hwpx("doc1.hwpx", content_xml=heading_xml("1. 서론"))
+        doc2 = make_hwpx("doc2.hwpx", content_xml=heading_xml("가. 서론"))
+
+        result = analyze([doc1, doc2], confidence_threshold=0.7)
+        assert result.common_sections == ["서론"]
+        assert result.confidence == 1.0
 
     def test_no_samples_raises(self):
         with pytest.raises(TemplateError, match="At least one"):

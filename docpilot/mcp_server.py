@@ -326,7 +326,7 @@ def generate_template(
     """샘플 HWPX 문서들을 분석하여 재사용 가능한 템플릿을 생성합니다.
 
     Args:
-        samples: 분석할 샘플 HWPX 파일 경로 목록 (2개 이상 권장)
+        samples: 분석할 샘플 HWPX 파일 경로 목록 (4개 이상 권장)
         output: 생성할 템플릿 파일 경로 (.hwpx)
         use_llm: LLM 보조 사용 여부 (None이면 공통 구조 신뢰도에 따라 자동 결정)
     """
