@@ -5,11 +5,14 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-11-13
+
 ### Added
 - `extract_placeholders(template)` 공개 함수 — 파일 경로 또는 내장/저장 템플릿 이름을 받아 `{{placeholder}}` 키 목록을 LLM 호출 없이 반환
 - `client.create_tables(embedding_dim=...)`, `docpilot.search.embedding.embedding_dim(embed_fn)` — 벡터 테이블을 임베딩 함수의 실제 차원으로 생성
 
 ### Changed
+- Gemini 기본 모델 `gemini-2.0-flash` → `gemini-3.6-flash` — 구 모델은 신규 발급 API 키/프로젝트에서 404(신규 사용자 미제공)로 막힘을 확인
 - `DocPilot()`이 LLM 매퍼를 처음 필요할 때 생성 — API 키 없이도 `index()`/`search()`/`generate_template(use_llm=False)` 등 LLM을 쓰지 않는 작업이 동작. API 키 누락 오류는 생성 시점이 아니라 LLM을 처음 쓰는 시점에 `MappingError`로 발생 (지원하지 않는 `llm` 이름은 기존처럼 생성 시점에 거부)
 - `DocPilot()`이 `embed_fn`의 실제 차원으로 벡터 테이블을 만들고, 기존 DB와 차원이 다르면 `SearchError`("임베딩 차원 불일치")를 발생. `dim` 속성이 없는 `embed_fn`(BGE·OpenAI·Voyage·사용자 정의)은 생성 시 한 번 호출해 차원을 측정
 - 패키지 내부 구조 분리: `__init__.py`의 구현을 `pilot`/`assembly`/`template_resolver`/`placeholders`/`extras` 모듈로 이동. 공개 API와 기존 최상위 내부 이름(`_resolve_template_path`, `_extract_placeholders` 등)은 그대로 import 가능
@@ -20,13 +23,7 @@
 - MCP `retrieve_context`가 `DOCPILOT_EMBED` 설정을 무시하고 항상 기본 임베딩을 쓰던 버그, 호출마다 임베딩 모델을 새로 로드하던 문제
 - 인자 없이 `pytest` 실행 시 `scripts/test_real.py`까지 수집돼 세션 전체가 중단되던 문제 (`testpaths` 지정), 선택 extras 미설치 환경에서 매퍼·PDF 테스트가 실패하던 문제
 - 템플릿 자동 생성 시 번호 매김 접두어(`1.`, `가.`, `제1장` 등)만 다른 제목이 서로 다른 섹션으로 인식되던 문제
-
-## [0.2.5] - 2026-08-04
-
-### Changed
-- Gemini 기본 모델 `gemini-2.0-flash` → `gemini-3.6-flash` — 구 모델은 신규 발급 API 키/프로젝트에서 404(신규 사용자 미제공)로 막힘을 확인
-
-### Fixed
+- `pip install "smart-docgen[all]"`에 MCP 서버 의존성(`mcp[cli]`)이 빠져 있던 문제
 - `DocPilot()` 직접 호출 시 `DOCPILOT_MODEL` 환경변수가 무시되던 버그 — MCP 서버(`mcp_server.py`) 경로에서만 읽히고 있었음. 이제 `model=` 인자를 생략하면 `DocPilot()`도 `DOCPILOT_MODEL`을 읽음
 - DOCX 템플릿에서 Word가 서식 차이로 `{{key}}`를 여러 run으로 쪼개 저장한 경우, 플레이스홀더 추출 결과에 XML 태그가 섞여 섹션명이 깨지던 버그 — raw XML을 우선 검색하던 로직을 제거하고 항상 태그를 제거한 텍스트에서 추출하도록 변경
 
