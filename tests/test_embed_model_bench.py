@@ -179,7 +179,7 @@ def test_summary():
         results.append((label, single_ms, batch10_ms, batch10_ms / 10))
 
     print(f"\n\n{'=' * 72}")
-    print(f"  임베딩 모델 비교 (CPU)")
+    print("  임베딩 모델 비교 (CPU)")
     print(f"{'=' * 72}")
     print(f"  {'모델':<34}  {'단건':>8}  {'배치10건':>10}  {'건당':>8}")
     print(f"  {'─' * 34}  {'─' * 8}  {'─' * 10}  {'─' * 8}")

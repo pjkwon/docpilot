@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from docpilot.exceptions import TemplateError
@@ -66,7 +66,6 @@ def _find_content(zf: zipfile.ZipFile) -> bytes:
 
 
 def _parse_paragraphs(root) -> list[ParagraphInfo]:
-    from lxml import etree
 
     hp_p = f"{{{_NS['hp']}}}p"
     hp_t = f"{{{_NS['hp']}}}t"

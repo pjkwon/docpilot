@@ -327,7 +327,7 @@ def test_tc05_index_auto_reindex_on_change(tmp_path):
     original_hash = indexer._compute_hash(txt)
 
     # 1차 인덱싱
-    ids_first = indexer.index_folder(str(data_folder))
+    indexer.index_folder(str(data_folder))
     with client.session() as db:
         doc = db.query(Document).filter(Document.source == str(txt)).first()
         assert doc is not None

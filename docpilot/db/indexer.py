@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy.exc import IntegrityError
 
 from docpilot.db import client
 from docpilot.db.schema import Chunk, Document

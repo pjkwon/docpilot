@@ -248,7 +248,6 @@ def _build_with_template(
     instructions: str | None,
     mapper: BaseLLMMapper,
 ) -> Path:
-    from docpilot.mapping.base import TemplateSection
     from docpilot.builder.hwpx_builder import HwpxBuilder
     from docpilot.builder.hwpx_dynamic_builder import pack_hwpx
 

@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 
 from docpilot.exceptions import ContextExceededError
 from docpilot.mapping.base import BaseLLMMapper, MappingResult, TemplateSection
 from docpilot.search.models import SearchFilter, SearchResult
-
-if TYPE_CHECKING:
-    from docpilot.ingestion.models import IngestedDocument
 
 logger = logging.getLogger(__name__)
 

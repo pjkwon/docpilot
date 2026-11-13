@@ -9,7 +9,6 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import pytest
 
 
 def test_index_data_folder(tmp_path: Path, perf_data_dir: Path, request) -> None:

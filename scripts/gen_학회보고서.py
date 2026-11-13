@@ -47,7 +47,7 @@ def main() -> None:
         shutil.copy2(SOURCE, tmp_dir)
         print(f"소스   : {SOURCE.name}")
         print(f"출력   : {OUTPUT}")
-        print(f"템플릿 : report (내장)")
+        print("템플릿 : report (내장)")
         print()
 
         t0 = time.perf_counter()

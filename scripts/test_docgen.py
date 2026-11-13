@@ -11,7 +11,6 @@ data/ 폴더 템플릿 + 전사 파일로 문서 생성 E2E 스크립트
 from __future__ import annotations
 
 import argparse
-import io
 import os
 import shutil
 import sys
@@ -135,7 +134,7 @@ def main() -> None:
     if args.convert and convert_keys:
         from docpilot import convert_to_list_placeholder
         converted_out = OUTPUT / (template_path.stem + "_converted" + template_path.suffix)
-        print(f"[변환] 다음 키를 {{{{?key?}}}}으로 변환:")
+        print("[변환] 다음 키를 {{?key?}}으로 변환:")
         for k in convert_keys:
             print(f"  · {k}")
         active_template = convert_to_list_placeholder(template_path, convert_keys, output=converted_out)
@@ -189,7 +188,7 @@ def main() -> None:
             sys.exit(1)
 
         elapsed = time.perf_counter() - t0
-        print(f"\n── 완료 ─────────────────────────────────────────────────────────")
+        print("\n── 완료 ─────────────────────────────────────────────────────────")
         print(f"출력 파일 : {output_path}")
         print(f"총 소요   : {elapsed:.1f}s")
         print(f"모델      : {result.model}")

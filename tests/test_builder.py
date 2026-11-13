@@ -144,7 +144,7 @@ class TestHwpxBuilder:
 
 class TestDocxBuilder:
     def test_build_produces_file(self, tmp_path: Path):
-        docx = pytest.importorskip("docx")
+        pytest.importorskip("docx")
         from docx import Document
         from docpilot.builder.docx_builder import DocxBuilder
 
@@ -168,7 +168,7 @@ class TestDocxBuilder:
         (word/header1.xml, word/footer1.xml) — regression: previously only doc.paragraphs/
         doc.tables (body) were ever touched, so header/footer placeholders were silently
         left unfilled even though extraction already detects them."""
-        docx = pytest.importorskip("docx")
+        pytest.importorskip("docx")
         from docx import Document
         from docpilot.builder.docx_builder import DocxBuilder
 
@@ -194,7 +194,7 @@ class TestDocxBuilder:
         """First-page header (different_first_page_header_footer) and even-page header
         (odd_and_even_pages_header_footer) are distinct parts from the default header —
         each needs its own fill pass."""
-        docx = pytest.importorskip("docx")
+        pytest.importorskip("docx")
         from docx import Document
         from docpilot.builder.docx_builder import DocxBuilder
 
@@ -224,7 +224,7 @@ class TestDocxBuilder:
         """A second section whose header is_linked_to_previous shares section 1's
         underlying header part — must not be visited as a separate fill pass (which
         would be redundant, and multi-line values would otherwise get cloned twice)."""
-        docx = pytest.importorskip("docx")
+        pytest.importorskip("docx")
         from docx.enum.section import WD_SECTION
         from docx import Document
         from docpilot.builder.docx_builder import DocxBuilder

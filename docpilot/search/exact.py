@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import or_, text
+from sqlalchemy import or_
 
 from docpilot.db import client
 from docpilot.db.schema import Chunk, Document

@@ -26,7 +26,6 @@ OUTPUT.parent.mkdir(exist_ok=True)
 
 def _extract_placeholder_keys(template: Path) -> list[str]:
     import re
-    from docpilot.builder.base import PLACEHOLDER_RE
 
     with zipfile.ZipFile(template) as zf:
         text = zf.read("Contents/section0.xml").decode("utf-8")
@@ -57,10 +56,14 @@ def main() -> None:
 
     print("\n--- 표 검증 ---")
     print(f"hp:tbl 개수: {section_xml.count('<hp:tbl ')}")
-    print(f"rowSpan=\"2\" 존재: {'rowSpan=\"2\"' in section_xml}")
-    print(f"colSpan=\"16\" 존재: {'colSpan=\"16\"' in section_xml}")
-    print(f"colSpan=\"4\" 존재: {'colSpan=\"4\"' in section_xml}")
-    print(f"header=\"1\" 셀 존재: {'header=\"1\"' in section_xml}")
+    # f-string 표현식 안의 역슬래시·같은 따옴표는 Python 3.12+ 전용이라 문자열을 밖에서 만든다
+    for needle, label in (
+        ('rowSpan="2"', 'rowSpan="2" 존재'),
+        ('colSpan="16"', 'colSpan="16" 존재'),
+        ('colSpan="4"', 'colSpan="4" 존재'),
+        ('header="1"', 'header="1" 셀 존재'),
+    ):
+        print(f"{label}: {needle in section_xml}")
 
     print("\n--- 글머리표 검증 ---")
     import re

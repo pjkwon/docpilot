@@ -10,7 +10,6 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import pytest
 
 
 def test_embed_batch_vs_per_chunk(perf_data_dir: Path, request) -> None:
@@ -50,7 +49,7 @@ def test_embed_batch_vs_per_chunk(perf_data_dir: Path, request) -> None:
 
     total_chunks = sum(len(c) for _, c in docs_chunks)
 
-    print(f"\n\n[임베딩 배치 처리 벤치마크]")
+    print("\n\n[임베딩 배치 처리 벤치마크]")
     print(f"  데이터 폴더: {perf_data_dir}")
     print(f"  파일: {len(docs_chunks)}개  |  총 청크: {total_chunks}개  |  API 지연 시뮬레이션: {latency_s * 1000:.0f}ms/호출")
     print("=" * 68)

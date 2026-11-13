@@ -51,7 +51,7 @@ for hwp_path in hwp_files:
         print(f"문단 수   : {doc.metadata.get('paragraph_count', '?')}")
         print(f"원본 크기 : {hwp_path.stat().st_size} bytes (.hwp)")
         print(f"변환 크기 : {hwpx_out.stat().st_size} bytes (.hwpx)")
-        print(f"--- 내용 미리보기 (앞 500자) ---")
+        print("--- 내용 미리보기 (앞 500자) ---")
         print(doc.content[:500])
     except Exception as e:
         print(f"[파싱 오류] {e}")

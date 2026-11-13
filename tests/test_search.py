@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from docpilot.exceptions import SearchError
-from docpilot.search.models import DocumentResult, SearchFilter, SearchResult
+from docpilot.search.models import SearchFilter, SearchResult
 
 
 # ---------------------------------------------------------------------------

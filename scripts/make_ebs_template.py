@@ -4,7 +4,6 @@ EBS_영어학습_정리노트_템플릿.docx 를 복사해
 출력: data/EBS_영어학습_정리노트_v2.docx
 """
 
-import copy
 from pathlib import Path
 from docx import Document
 

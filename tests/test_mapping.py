@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from docpilot.exceptions import MappingError
-from docpilot.mapping.base import BaseLLMMapper, MappingResult, TemplateSection
+from docpilot.mapping.base import MappingResult, TemplateSection
 from docpilot.mapping import benchmark
 from tests.mocks.llm_mock import MockMapper
 
@@ -244,7 +244,6 @@ class TestBenchmark:
 
 class TestGeminiMapper:
     def test_map_calls_api(self):
-        import sys
         from docpilot.mapping.gemini import GeminiMapper
 
         mock_usage = MagicMock()
@@ -267,7 +266,6 @@ class TestGeminiMapper:
 
     def test_map_truncated_by_max_tokens_blames_max_tokens(self):
         """candidate.finish_reason=MAX_TOKENS + broken JSON → error must name max_tokens."""
-        import sys
         from docpilot.mapping.gemini import GeminiMapper
 
         mock_usage = MagicMock()
@@ -299,7 +297,6 @@ class TestGeminiMapper:
     def test_map_accepts_instructions_positionally(self):
         """RagMapper/generate_from_content call mapper.map(content, sections, instructions) —
         must not raise TypeError, and the instructions text must reach the prompt."""
-        import sys
         from docpilot.mapping.gemini import GeminiMapper
 
         mock_usage = MagicMock()

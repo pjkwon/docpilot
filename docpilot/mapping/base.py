@@ -97,7 +97,6 @@ class BaseLLMMapper(ABC):
             suffix = " ".join(parts)
             return f'- "{s.name}": {suffix}' if suffix else f'- "{s.name}"'
 
-        required = [s for s in sections if not s.optional and not s.is_list]
         optional_s = [s for s in sections if s.optional and not s.is_list]
         list_s = [s for s in sections if s.is_list]
 
