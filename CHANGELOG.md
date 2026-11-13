@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-11-13
+
 ### Fixed
 - PostgreSQL: `save_template()`이 항상 `UndefinedColumn`으로 실패하던 버그 — `template_records.embedding` 컬럼을 만들지 않았음. 기존 DB에는 다음 `DocPilot()` 생성 시 컬럼이 자동 추가됨
 - PostgreSQL: 저장한 템플릿을 이름으로 찾지 못하던 문제 — 템플릿 검색이 미구현(항상 빈 결과)이었음. pgvector 유사도 + 이름·설명 부분 일치를 RRF로 병합하도록 구현
