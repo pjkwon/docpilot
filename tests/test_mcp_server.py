@@ -261,6 +261,28 @@ def test_tc04_output_files_distinct(placeholder_template, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# _get_pilot: LLM 제공자별 API 키
+# ---------------------------------------------------------------------------
+
+@requires_mcp
+def test_get_pilot_uses_provider_specific_api_key(tmp_path, monkeypatch):
+    """DOCPILOT_LLM=openai면 ANTHROPIC_API_KEY가 아니라 OPENAI_API_KEY가 매퍼에 들어가야 합니다."""
+    from docpilot import mcp_server
+
+    monkeypatch.setattr(mcp_server, "_pilot", None)
+    monkeypatch.setenv("DOCPILOT_LLM", "openai")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-wrong")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-right")
+    monkeypatch.setenv("DOCPILOT_DATABASE_URL", f"sqlite:///{tmp_path / 'mcp.db'}")
+    monkeypatch.delenv("DOCPILOT_MODEL", raising=False)
+    monkeypatch.delenv("DOCPILOT_EMBED", raising=False)
+
+    pilot = mcp_server._get_pilot()
+
+    assert pilot._mapper._api_key == "sk-openai-right"
+
+
+# ---------------------------------------------------------------------------
 # TC-05: index 도구 — 파일 변경 시 자동 재인덱싱 (RAG 인덱싱은 라이브러리 레벨 기능, LLM 불필요)
 # ---------------------------------------------------------------------------
 

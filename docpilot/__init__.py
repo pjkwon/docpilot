@@ -999,6 +999,9 @@ def retrieve_context(
     )
 
 
+_SUPPORTED_LLMS = ("claude", "openai", "gemini", "grok", "ollama")
+
+
 class DocPilot:
     """
     Main entry point for docpilot.
@@ -1041,21 +1044,48 @@ class DocPilot:
             Ollama models especially; see llm_benchmark_report.md).
         """
         self._llm = llm or os.environ.get("DOCPILOT_LLM", "claude")
+        if self._llm.lower() not in _SUPPORTED_LLMS:
+            raise MappingError(
+                f"Unknown LLM '{self._llm}'. Supported: {', '.join(_SUPPORTED_LLMS)}"
+            )
         self._api_key = api_key
         if embed_fn is None:
             from docpilot.search.embedding import default_embed_fn
             embed_fn = default_embed_fn()  # None when sentence-transformers not installed
         self._embed_fn = embed_fn
-        model = model or os.environ.get("DOCPILOT_MODEL")
-        base_mapper = self._build_mapper(self._llm, api_key, model, base_url, num_ctx, temperature)
+        self._use_reranker = use_reranker
 
-        from docpilot.mapping.rag import RagMapper
-        self._mapper = base_mapper
-        self._rag_mapper = RagMapper(base_mapper, embed_fn=embed_fn, use_reranker=use_reranker)
+        # LLM 매퍼(와 API 키 검증)는 처음 필요해질 때 만든다 — index()/search()/
+        # generate_template(use_llm=False)처럼 LLM을 쓰지 않는 작업은 API 키 없이도 동작해야 한다.
+        model = model or os.environ.get("DOCPILOT_MODEL")
+        self._mapper_args = (self._llm, api_key, model, base_url, num_ctx, temperature)
+        self._mapper_instance = None
+        self._rag_mapper_instance = None
 
         from docpilot.db import client as db_client
         db_client.init(database_url)
         db_client.create_tables()
+
+    @property
+    def _mapper(self):
+        """LLM 매퍼 — 첫 접근 시 생성되며, API 키 누락은 이때 MappingError로 드러난다."""
+        if self._mapper_instance is None:
+            self._mapper_instance = self._build_mapper(*self._mapper_args)
+        return self._mapper_instance
+
+    @_mapper.setter
+    def _mapper(self, mapper) -> None:
+        self._mapper_instance = mapper
+        self._rag_mapper_instance = None  # 다음 접근 때 새 매퍼로 다시 감싼다
+
+    @property
+    def _rag_mapper(self):
+        if self._rag_mapper_instance is None:
+            from docpilot.mapping.rag import RagMapper
+            self._rag_mapper_instance = RagMapper(
+                self._mapper, embed_fn=self._embed_fn, use_reranker=self._use_reranker,
+            )
+        return self._rag_mapper_instance
 
     def index(self, data_folder: str | Path, collection: str | None = None) -> list[int]:
         """Ingest and index all supported files in a folder.
@@ -1378,7 +1408,8 @@ class DocPilot:
             tags=tags,
             sections_meta=sections_meta,
             auto_sections_meta=auto_sections_meta,
-            mapper=self._mapper,
+            # 매퍼는 LLM 자동 추론을 실제로 할 때만 넘긴다 — 아니면 API 키 없이도 저장되어야 함
+            mapper=self._mapper if (sections_meta is None and auto_sections_meta) else None,
             embed_fn=self._embed_fn,
         )
 

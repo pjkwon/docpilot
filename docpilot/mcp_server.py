@@ -59,13 +59,10 @@ def _get_pilot():
     global _pilot
     if _pilot is None:
         from docpilot import DocPilot
-        _pilot = DocPilot(
-            llm=os.environ.get("DOCPILOT_LLM", "claude"),
-            api_key=os.environ.get("ANTHROPIC_API_KEY"),
-            model=os.environ.get("DOCPILOT_MODEL") or None,
-            database_url=os.environ.get("DOCPILOT_DATABASE_URL") or None,
-            embed_fn=_resolve_embed_fn(),
-        )
+        # LLM 제공자(DOCPILOT_LLM)·모델(DOCPILOT_MODEL)·DB(DOCPILOT_DATABASE_URL)·제공자별 API 키는
+        # DocPilot과 각 매퍼가 환경변수에서 직접 읽는다. 여기서 키를 따로 넘기면 제공자와 무관하게
+        # 한 가지 키가 강제되므로(예: openai인데 ANTHROPIC_API_KEY 전달) 넘기지 않는다.
+        _pilot = DocPilot(embed_fn=_resolve_embed_fn())
     return _pilot
 
 
